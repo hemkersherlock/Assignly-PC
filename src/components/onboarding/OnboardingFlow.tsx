@@ -19,14 +19,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { ArrowLeft, ArrowRight, User, Phone, GraduationCap } from "lucide-react";
+import { ArrowLeft, ArrowRight, Phone, GraduationCap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { doc, updateDoc } from "firebase/firestore";
 import { useFirebase } from "@/firebase";
 import type { User as UserType } from "@/types";
 
 interface OnboardingData {
-  name: string;
   whatsappNo: string;
   section: string;
   year: UserType["year"];
@@ -42,7 +41,6 @@ interface OnboardingFlowProps {
 export default function OnboardingFlow({ user, onComplete }: OnboardingFlowProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [data, setData] = useState<OnboardingData>({
-    name: "",
     whatsappNo: "",
     section: "",
     year: "1st Year",
@@ -53,7 +51,7 @@ export default function OnboardingFlow({ user, onComplete }: OnboardingFlowProps
   const { firestore } = useFirebase();
   const { toast } = useToast();
 
-  const totalSteps = 3;
+  const totalSteps = 2;
 
   const handleNext = () => {
     if (currentStep < totalSteps) {
@@ -72,7 +70,6 @@ export default function OnboardingFlow({ user, onComplete }: OnboardingFlowProps
     try {
       const userRef = doc(firestore, "users", user.id);
       await updateDoc(userRef, {
-        name: data.name,
         whatsappNo: data.whatsappNo,
         section: data.section,
         year: data.year,
@@ -83,7 +80,6 @@ export default function OnboardingFlow({ user, onComplete }: OnboardingFlowProps
       // Create updated user object
       const updatedUser = {
         ...user,
-        name: data.name,
         whatsappNo: data.whatsappNo,
         section: data.section,
         year: data.year,
@@ -113,10 +109,8 @@ export default function OnboardingFlow({ user, onComplete }: OnboardingFlowProps
   const isStepValid = () => {
     switch (currentStep) {
       case 1:
-        return data.name.trim() !== "";
-      case 2:
         return data.whatsappNo.trim() !== "" && data.section.trim() !== "";
-      case 3:
+      case 2:
         return data.year && data.sem && data.branch;
       default:
         return false;
@@ -126,29 +120,6 @@ export default function OnboardingFlow({ user, onComplete }: OnboardingFlowProps
   const renderStep = () => {
     switch (currentStep) {
       case 1:
-        return (
-          <div className="space-y-6">
-            <div className="text-center">
-              <User className="mx-auto h-12 w-12 text-primary mb-4" />
-              <h2 className="text-2xl font-semibold">Personal Information</h2>
-              <p className="text-muted-foreground">Let's start with your basic details</p>
-            </div>
-            
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="name">Full Name *</Label>
-                <Input
-                  id="name"
-                  placeholder="Enter your full name"
-                  value={data.name}
-                  onChange={(e) => setData({ ...data, name: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-        );
-
-      case 2:
         return (
           <div className="space-y-6">
             <div className="text-center">
@@ -181,7 +152,7 @@ export default function OnboardingFlow({ user, onComplete }: OnboardingFlowProps
           </div>
         );
 
-      case 3:
+      case 2:
         return (
           <div className="space-y-6">
             <div className="text-center">

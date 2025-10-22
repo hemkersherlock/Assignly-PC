@@ -48,7 +48,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // Check if user needs onboarding (only for completely new users with no profile data)
   const needsOnboarding = appUser ? (
-    !appUser.name || appUser.name === '' ||
     !appUser.whatsappNo || appUser.whatsappNo === '' ||
     !appUser.section || appUser.section === ''
   ) : false;
@@ -56,7 +55,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Debug logging for onboarding
   if (appUser) {
     console.log('🔍 Onboarding check:', {
-      name: appUser.name,
       whatsappNo: appUser.whatsappNo,
       section: appUser.section,
       needsOnboarding
@@ -84,7 +82,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const userDocRef = doc(firestore, "users", firebaseUser.uid);
         
         try {
-          const userDoc = await getDoc(userDocRef);
+          // Add timeout to prevent hanging
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('User data loading timeout')), 15000);
+          });
+          
+          const userDocPromise = getDoc(userDocRef);
+          const userDoc = await Promise.race([userDocPromise, timeoutPromise]) as any;
 
           if (userDoc.exists()) {
             console.log('✅ User document found');
@@ -119,6 +123,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           } else {
             console.log('⚠️ User document does NOT exist. Creating new profile...');
             const newUser = {
+                id: firebaseUser.uid, // Add the id field for Firestore rules
                 email: firebaseUser.email || 'unknown@example.com',
                 role: 'student',
                 isActive: true,
@@ -128,7 +133,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 createdAt: serverTimestamp(),
                 lastOrderAt: null,
                 // New profile fields with default values
-                name: '',
                 whatsappNo: '',
                 section: '',
                 year: '1st Year' as const,
@@ -136,8 +140,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 branch: 'CS' as const,
             };
 
-            // Create user document
-            await setDoc(userDocRef, newUser);
+            // Create user document with timeout
+            console.log('🔍 Creating user document with data:', newUser);
+            
+            const createTimeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('User creation timeout')), 10000);
+            });
+            
+            const createUserPromise = setDoc(userDocRef, newUser);
+            await Promise.race([createUserPromise, createTimeoutPromise]);
             console.log('✅ User document created successfully!');
 
             // Set user data immediately
@@ -148,11 +159,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               createdAt: new Date(),
               lastOrderAt: null
             };
+            console.log('🔍 Setting app user data:', appUserData);
             setAppUser(appUserData);
+            console.log('✅ App user data set successfully!');
           }
         } catch (err: any) {
             console.error('❌ ERROR in AuthContext:', err);
+            console.error('❌ Error details:', {
+              code: err.code,
+              message: err.message,
+              stack: err.stack
+            });
             setError(err.message || 'An unexpected error occurred during login.');
+            setLoading(false); // Make sure to stop loading on error
             // Don't automatically log out on error - let the user try again
             // await signOut(auth);
         }
@@ -167,7 +186,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [firebaseUser, firestore, auth]);
   
   useEffect(() => {
+    console.log('🔍 Redirect check:', { loading, pathname, appUser: !!appUser, role: appUser?.role });
+    
     if (loading || !pathname) {
+      console.log('⏳ Still loading or no pathname, skipping redirect');
       return;
     }
 
@@ -175,12 +197,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     if (appUser && isAuthPage) {
       const targetDashboard = appUser.role === 'admin' ? '/admin' : '/dashboard';
-      console.log(`User is on auth page, redirecting to ${targetDashboard}`);
+      console.log(`✅ User is on auth page, redirecting to ${targetDashboard}`);
       router.push(targetDashboard);
     }
     
     if (!appUser && !isAuthPage) {
-       console.log(`User is not authenticated and not on auth page, redirecting to /login`);
+       console.log(`❌ User is not authenticated and not on auth page, redirecting to /login`);
       router.push('/login');
     }
   }, [appUser, loading, pathname, router]);

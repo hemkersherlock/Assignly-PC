@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import Logo from "@/components/shared/Logo";
 import { useFirebase } from "@/firebase";
 import { Loader2 } from "lucide-react";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import { useToast } from "@/hooks/use-toast";
 
 
@@ -27,36 +27,43 @@ export default function LoginPage() {
   const { auth } = useFirebase();
   const { toast } = useToast();
 
-  const handleLoginOrSignup = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
 
     try {
-      // First, try to sign in
+      // Only allow existing users to log in - NO new account creation
       await signInWithEmailAndPassword(auth, email, password);
+      console.log('✅ Login successful');
       // On successful login, the AuthContext's onAuthStateChanged will handle redirection.
     } catch (err: any) {
-        // If user does not exist, create a new account
-        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-            try {
-                await createUserWithEmailAndPassword(auth, email, password);
-                // On successful signup, the AuthContext's onAuthStateChanged will handle everything else.
-            } catch (createErr: any) {
-                const message = createErr.message?.replace('Firebase: ','') || "Failed to create account.";
-                setError(message);
-                console.error("Signup Error:", createErr);
-                setIsLoading(false);
-            }
+        console.error('❌ Login failed:', err);
+        
+        // Handle specific error cases
+        if (err.code === 'auth/user-not-found') {
+            setError("Account not found. This is a closed service - only pre-created accounts can access.");
+        } else if (err.code === 'auth/wrong-password') {
+            setError("Incorrect password. Please check your credentials.");
+        } else if (err.code === 'auth/invalid-email') {
+            setError("Invalid email address format.");
+        } else if (err.code === 'auth/too-many-requests') {
+            setError("Too many failed attempts. Please try again later.");
         } else {
-            // Handle other login errors
-            const message = err.message?.replace('Firebase: ','') || "An unexpected error occurred.";
+            const message = err.message?.replace('Firebase: ','') || "Login failed. Please try again.";
             setError(message);
-            console.error("Login Error:", err);
-            setIsLoading(false);
         }
+        
+        setIsLoading(false);
     }
-    // Don't set loading to false on success - let the redirect happen
+    
+    // Add a timeout to reset loading state if redirect doesn't happen
+    setTimeout(() => {
+      if (isLoading) {
+        console.log('⏰ Login timeout - resetting loading state');
+        setIsLoading(false);
+      }
+    }, 8000); // 8 second timeout
   };
 
   return (
@@ -66,10 +73,13 @@ export default function LoginPage() {
             <Logo className="h-8 w-8" />
             <CardTitle className="text-3xl font-bold">Assignly</CardTitle>
         </div>
-        <CardDescription>Enter your email and password to login or sign up</CardDescription>
+        <CardDescription>Enter your email and password to login</CardDescription>
+        <p className="text-xs text-muted-foreground mt-2">
+          This is a closed service. Only pre-created accounts can access.
+        </p>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleLoginOrSignup} className="space-y-4">
+        <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
@@ -96,7 +106,7 @@ export default function LoginPage() {
           {error && <p className="text-sm text-red-500">{error}</p>}
           <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? <Loader2 className="mr-2 animate-spin" /> : null}
-            {isLoading ? "Please wait..." : "Login / Sign Up"}
+            {isLoading ? "Please wait..." : "Login"}
           </Button>
         </form>
       </CardContent>
