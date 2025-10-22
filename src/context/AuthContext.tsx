@@ -24,6 +24,7 @@ interface AuthContextType {
   loading: boolean;
   logout: () => Promise<void>;
   setAppUser: (user: AppUser | null) => void;
+  needsOnboarding: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -44,6 +45,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const pathname = usePathname();
+
+  // Check if user needs onboarding (only for completely new users with no profile data)
+  const needsOnboarding = appUser ? (
+    !appUser.name || appUser.name === '' ||
+    !appUser.whatsappNo || appUser.whatsappNo === '' ||
+    !appUser.section || appUser.section === ''
+  ) : false;
+
+  // Debug logging for onboarding
+  if (appUser) {
+    console.log('🔍 Onboarding check:', {
+      name: appUser.name,
+      whatsappNo: appUser.whatsappNo,
+      section: appUser.section,
+      needsOnboarding
+    });
+  }
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -109,6 +127,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 totalPages: 0,
                 createdAt: serverTimestamp(),
                 lastOrderAt: null,
+                // New profile fields with default values
+                name: '',
+                whatsappNo: '',
+                section: '',
+                year: '1st Year' as const,
+                sem: '1st Sem' as const,
+                branch: 'CS' as const,
             };
 
             // Create user document
@@ -128,7 +153,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } catch (err: any) {
             console.error('❌ ERROR in AuthContext:', err);
             setError(err.message || 'An unexpected error occurred during login.');
-            await signOut(auth);
+            // Don't automatically log out on error - let the user try again
+            // await signOut(auth);
         }
       } else {
         console.log('🚪 User logged out');
@@ -166,7 +192,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     router.push('/login');
   };
 
-  const value = { user: appUser, firebaseUser, loading, logout, setAppUser };
+  const value = { user: appUser, firebaseUser, loading, logout, setAppUser, needsOnboarding };
   
   if (loading && pathname !== '/login') {
     return (

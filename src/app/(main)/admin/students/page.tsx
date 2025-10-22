@@ -139,7 +139,7 @@ export default function AdminStudentsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Email</TableHead>
+              <TableHead>Student</TableHead>
               <TableHead className="text-center">Credits</TableHead>
               <TableHead className="text-center">Total Orders</TableHead>
               <TableHead className="text-center">Total Pages</TableHead>
@@ -151,7 +151,13 @@ export default function AdminStudentsPage() {
           <TableBody>
             {students.map(student => (
               <TableRow key={student.id}>
-                <TableCell className="font-medium">{student.email}</TableCell>
+                <TableCell className="font-medium">
+                  <div>
+                    <div className="font-semibold">{student.name || 'No Name'}</div>
+                    <div className="text-sm text-muted-foreground">{student.email}</div>
+                    <div className="text-xs text-muted-foreground">{student.branch} - {student.year}</div>
+                  </div>
+                </TableCell>
                 <TableCell className="text-center font-semibold">{student.creditsRemaining}</TableCell>
                 <TableCell className="text-center">{student.totalOrders}</TableCell>
                 <TableCell className="text-center">{student.totalPages}</TableCell>

@@ -8,6 +8,14 @@ export interface User {
   role: "student" | "admin";
   isActive: boolean;
   
+  // Profile Information (new)
+  name: string;                    // Student's full name
+  whatsappNo: string;              // WhatsApp number
+  section: string;                 // Section (A, B, C, etc.)
+  year: "1st Year" | "2nd Year" | "3rd Year" | "4th Year";
+  sem: "1st Sem" | "2nd Sem" | "3rd Sem" | "4th Sem" | "5th Sem" | "6th Sem" | "7th Sem" | "8th Sem";
+  branch: "CS" | "EXTC" | "MECH" | "CHEM" | "IT" | "INSTRU";
+  
   // Credit System (core functionality)
   creditsRemaining: number;
   
@@ -28,6 +36,9 @@ export interface Order {
   id: string;
   studentId: string;
   studentEmail: string;
+  studentName?: string;
+  studentBranch?: string;
+  studentYear?: string;
   assignmentTitle: string;
   originalFiles: { name: string, url: string }[];
   orderType: "assignment" | "practical";

@@ -49,6 +49,7 @@ export default function AdminDashboard() {
         
         for (const userDoc of usersSnapshot.docs) {
           const userId = userDoc.id;
+          const userData = userDoc.data();
           
           // Get orders for this user
           const ordersSnapshot = await getDocs(
@@ -60,7 +61,10 @@ export default function AdminDashboard() {
             orders.push({
               id: orderDoc.id,
               studentId: userId,
-              studentEmail: orderData.studentEmail || 'Unknown',
+              studentEmail: orderData.studentEmail || userData.email || 'Unknown',
+              studentName: userData.name || 'Unknown Student',
+              studentBranch: userData.branch || 'Unknown',
+              studentYear: userData.year || 'Unknown',
               assignmentTitle: orderData.assignmentTitle || 'Untitled',
               orderType: orderData.orderType || 'assignment',
               pageCount: orderData.pageCount || 0,
@@ -172,7 +176,10 @@ export default function AdminDashboard() {
                   {[...Array(5)].map((_, i) => (
                     <TableRow key={`skeleton-${i}`}>
                       <TableCell>
-                        <Skeleton className="h-4 w-32" />
+                        <div>
+                          <Skeleton className="h-4 w-24 mb-1" />
+                          <Skeleton className="h-3 w-16" />
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Skeleton className="h-4 w-40" />
@@ -259,7 +266,12 @@ export default function AdminDashboard() {
                 <TableBody>
                     {activeOrders.map(order => (
                         <TableRow key={order.id}>
-                            <TableCell>{order.studentEmail}</TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-semibold">{order.studentName || 'Unknown Student'}</div>
+                                <div className="text-sm text-muted-foreground">{order.studentBranch} - {order.studentYear}</div>
+                              </div>
+                            </TableCell>
                             <TableCell>
                               <div className="space-y-1">
                                 <div className="flex items-center gap-2">

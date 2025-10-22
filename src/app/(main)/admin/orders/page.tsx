@@ -29,6 +29,9 @@ interface RealOrder {
   id: string;
   studentId: string;
   studentEmail: string;
+  studentName?: string;
+  studentBranch?: string;
+  studentYear?: string;
   assignmentTitle: string;
   orderType: string;
   pageCount: number;
@@ -36,6 +39,13 @@ interface RealOrder {
   createdAt: any;
   originalFiles: { name: string; url: string }[];
   cloudinaryFolder: string;
+}
+
+// Function to generate a shorter, user-friendly order ID
+function generateShortOrderId(fullId: string): string {
+  // Take first 8 characters and last 4 characters
+  if (fullId.length <= 12) return fullId;
+  return `${fullId.substring(0, 8)}...${fullId.substring(fullId.length - 4)}`;
 }
 
 export default function AdminAllOrdersPage() {
@@ -56,6 +66,7 @@ export default function AdminAllOrdersPage() {
         
         for (const userDoc of usersSnapshot.docs) {
           const userId = userDoc.id;
+          const userData = userDoc.data();
           console.log(`[Admin] Checking orders for user: ${userId}`);
           
           // Get orders for this user
@@ -68,7 +79,10 @@ export default function AdminAllOrdersPage() {
             allOrders.push({
               id: orderDoc.id,
               studentId: userId,
-              studentEmail: orderData.studentEmail || 'Unknown',
+              studentEmail: orderData.studentEmail || userData.email || 'Unknown',
+              studentName: userData.name || 'Unknown Student',
+              studentBranch: userData.branch || 'Unknown',
+              studentYear: userData.year || 'Unknown',
               assignmentTitle: orderData.assignmentTitle || 'Untitled',
               orderType: orderData.orderType || 'assignment',
               pageCount: orderData.pageCount || 0,
@@ -160,7 +174,10 @@ export default function AdminAllOrdersPage() {
                     <Skeleton className="h-4 w-20" />
                   </TableCell>
                   <TableCell>
-                    <Skeleton className="h-4 w-32" />
+                    <div>
+                      <Skeleton className="h-4 w-24 mb-1" />
+                      <Skeleton className="h-3 w-16" />
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="space-y-2">
@@ -211,8 +228,15 @@ export default function AdminAllOrdersPage() {
           <TableBody>
             {orders.map(order => (
               <TableRow key={order.id}>
-                <TableCell className="font-mono text-xs">{order.id}</TableCell>
-                <TableCell>{order.studentEmail}</TableCell>
+                <TableCell className="font-mono text-xs" title={order.id}>
+                  {generateShortOrderId(order.id)}
+                </TableCell>
+                <TableCell>
+                  <div>
+                    <div className="font-semibold">{order.studentName || 'Unknown Student'}</div>
+                    <div className="text-sm text-muted-foreground">{order.studentBranch} - {order.studentYear}</div>
+                  </div>
+                </TableCell>
                 <TableCell>
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
