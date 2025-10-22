@@ -40,26 +40,23 @@ export default function LoginPage() {
         // If user does not exist, create a new account
         if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
             try {
-                toast({
-                    title: 'Creating Account',
-                    description: 'First time? We are setting up your account.',
-                });
                 await createUserWithEmailAndPassword(auth, email, password);
                 // On successful signup, the AuthContext's onAuthStateChanged will handle everything else.
             } catch (createErr: any) {
                 const message = createErr.message?.replace('Firebase: ','') || "Failed to create account.";
                 setError(message);
                 console.error("Signup Error:", createErr);
+                setIsLoading(false);
             }
         } else {
             // Handle other login errors
             const message = err.message?.replace('Firebase: ','') || "An unexpected error occurred.";
             setError(message);
             console.error("Login Error:", err);
+            setIsLoading(false);
         }
-    } finally {
-        setIsLoading(false);
     }
+    // Don't set loading to false on success - let the redirect happen
   };
 
   return (

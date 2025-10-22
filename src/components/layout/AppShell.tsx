@@ -49,9 +49,7 @@ const adminNav = [
   { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { name: "Orders", href: "/admin/orders", icon: FileText },
   { name: "Students", href: "/admin/students", icon: Users },
-  { name: "Analytics", href: "/admin/analytics", icon: BarChart2 },
-  { name: "Quota", href: "/admin/quota", icon: Package },
-  { name: "Payments", href: "/admin/payments", icon: CreditCard },
+  { name: "Credits", href: "/admin/quota", icon: Package },
 ];
 
 function NavLink({

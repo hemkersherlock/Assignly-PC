@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Card,
   CardContent,
@@ -15,21 +17,58 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { mockUsers } from "@/lib/mock-data";
-import { format } from "date-fns";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useCollection } from "@/firebase/firestore/use-collection";
+import { collection, query, orderBy, limit } from "firebase/firestore";
+import { useFirebase, useMemoFirebase } from "@/firebase";
+import { useAuthContext } from "@/context/AuthContext";
+import { safeFormat } from "@/lib/date-utils";
 import { Edit, Eye } from "lucide-react";
 import Link from 'next/link';
 import { cn } from "@/lib/utils";
-
-const students = mockUsers.filter(u => u.role === 'student');
-
-const paymentStatusStyles = {
-  paid: "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300",
-  pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300",
-  overdue: "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300",
-};
+import type { User } from "@/types";
 
 export default function AdminStudentsPage() {
+  const { firestore } = useFirebase();
+  const { user: currentUser } = useAuthContext();
+
+  // Get all users (students)
+  const usersQuery = useMemoFirebase(() => {
+    if (!currentUser?.isAdmin) return null;
+    return query(collection(firestore, 'users'), orderBy('createdAt', 'desc'), limit(100));
+  }, [firestore, currentUser?.isAdmin]);
+
+  const { data: allUsers, isLoading } = useCollection<User>(usersQuery);
+
+  // Filter to only show students (non-admin users)
+  const students = allUsers?.filter(user => user.role !== 'admin') || [];
+
+  if (isLoading) {
+    return (
+      <Card className="shadow-subtle">
+        <CardHeader>
+          <CardTitle>Student Management</CardTitle>
+          <CardDescription>View and manage all student accounts.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-center space-x-4">
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-6 w-20" />
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-8 w-32" />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="shadow-subtle">
       <CardHeader>
@@ -61,11 +100,21 @@ export default function AdminStudentsPage() {
                     {student.isActive ? 'Active' : 'Inactive'}
                   </Badge>
                 </TableCell>
-                <TableCell>{student.lastOrderAt ? format(student.lastOrderAt, "PPP") : 'N/A'}</TableCell>
+                <TableCell>{safeFormat(student.lastOrderAt, "PPP", "Never")}</TableCell>
                 <TableCell className="text-right">
                    <div className="flex gap-2 justify-end">
-                      <Button asChild variant="outline" size="sm"><Link href="#">View Orders</Link></Button>
-                      <Button asChild variant="outline" size="sm"><Link href="/admin/quota">Adjust Quota</Link></Button>
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/admin/orders?student=${student.id}`}>
+                          <Eye className="h-4 w-4 mr-1" />
+                          View Orders
+                        </Link>
+                      </Button>
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/admin/credits?student=${student.id}`}>
+                          <Edit className="h-4 w-4 mr-1" />
+                          Adjust Credits
+                        </Link>
+                      </Button>
                    </div>
                 </TableCell>
               </TableRow>

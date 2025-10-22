@@ -10,38 +10,100 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowRight, Clock, Download, Eye, Loader, CheckCircle } from "lucide-react";
-import { mockOrders } from "@/lib/mock-data";
+import { Clock, Download, Loader, CheckCircle, Users, FileText } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
-import {
-  AreaChart,
-  Area,
-  ResponsiveContainer,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-} from "recharts";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-
-const activeOrders = mockOrders.filter(o => o.status === 'pending' || o.status === 'in_progress');
-const pendingCount = mockOrders.filter(o => o.status === 'pending').length;
-const inProgressCount = mockOrders.filter(o => o.status === 'in_progress').length;
-const completedToday = mockOrders.filter(o => o.status === 'completed' && o.completedAt && new Date().toDateString() === o.completedAt.toDateString()).length;
-const completedOrders = mockOrders.filter(o => o.status === 'completed' && o.turnaroundTimeHours);
-const avgTurnaround = completedOrders.length > 0
-  ? Math.round(completedOrders.reduce((acc, o) => acc + o.turnaroundTimeHours!, 0) / completedOrders.length)
-  : 0;
-
-const weeklyData = [
-    { day: "Mon", orders: 12 }, { day: "Tue", orders: 15 }, { day: "Wed", orders: 8 },
-    { day: "Thu", orders: 19 }, { day: "Fri", orders: 14 }, { day: "Sat", orders: 22 },
-    { day: "Sun", orders: 10 }
-];
+import { useCollection } from "@/firebase/firestore/use-collection";
+import { collection, query, orderBy, where, limit } from "firebase/firestore";
+import { useFirebase, useMemoFirebase } from "@/firebase";
+import { useAuthContext } from "@/context/AuthContext";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { Order, User } from "@/types";
+import { safeFormatDistance } from "@/lib/date-utils";
 
 
 export default function AdminDashboard() {
+  const { firestore } = useFirebase();
+  const { user: currentUser } = useAuthContext();
+
+  // Get all orders from all users
+  const allOrdersQuery = useMemoFirebase(() => {
+    if (!currentUser?.isAdmin) return null;
+    return query(
+      collection(firestore, 'analytics', 'all_orders', 'orders'),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+  }, [firestore, currentUser?.isAdmin]);
+
+  const { data: allOrders, isLoading: ordersLoading } = useCollection<Order>(allOrdersQuery);
+
+  // Get all users for stats
+  const allUsersQuery = useMemoFirebase(() => {
+    if (!currentUser?.isAdmin) return null;
+    return query(collection(firestore, 'users'), limit(100));
+  }, [firestore, currentUser?.isAdmin]);
+
+  const { data: allUsers, isLoading: usersLoading } = useCollection<User>(allUsersQuery);
+
+  // Calculate real statistics
+  const activeOrders = allOrders?.filter(o => o.status === 'pending' || o.status === 'in_progress') || [];
+  const pendingCount = allOrders?.filter(o => o.status === 'pending').length || 0;
+  const inProgressCount = allOrders?.filter(o => o.status === 'in_progress').length || 0;
+  const completedToday = allOrders?.filter(o => {
+    if (o.status !== 'completed' || !o.completedAt) return false;
+    const today = new Date().toDateString();
+    const completedDate = o.completedAt instanceof Date ? o.completedAt : o.completedAt.toDate();
+    return completedDate.toDateString() === today;
+  }).length || 0;
+
+  const totalStudents = allUsers?.length || 0;
+  const totalOrders = allOrders?.length || 0;
+  const totalPages = allOrders?.reduce((sum, order) => sum + (order.pageCount || 0), 0) || 0;
+
+  const isLoading = ordersLoading || usersLoading;
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto p-0 grid gap-8">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i} className="shadow-subtle">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-4" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-3 w-32" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="grid gap-8 lg:grid-cols-5">
+          <Card className="lg:col-span-3 shadow-subtle">
+            <CardHeader>
+              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-4 w-64" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-64 w-full" />
+            </CardContent>
+          </Card>
+          <Card className="lg:col-span-2 shadow-subtle">
+            <CardHeader>
+              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-4 w-48" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-64 w-full" />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-0 grid gap-8">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -77,12 +139,12 @@ export default function AdminDashboard() {
         </Card>
         <Card className="shadow-subtle">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg. Turnaround</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Total Students</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">~{avgTurnaround || 0} hours</div>
-            <p className="text-xs text-muted-foreground">Average completion time</p>
+            <div className="text-2xl font-bold">{totalStudents}</div>
+            <p className="text-xs text-muted-foreground">Registered users</p>
           </CardContent>
         </Card>
       </div>
@@ -127,7 +189,7 @@ export default function AdminDashboard() {
                               </div>
                             </TableCell>
                             <TableCell>{order.pageCount}</TableCell>
-                            <TableCell>{order.createdAt ? formatDistanceToNow(order.createdAt instanceof Date ? order.createdAt : order.createdAt.toDate()) : 'Unknown'}</TableCell>
+                            <TableCell>{safeFormatDistance(order.createdAt, { addSuffix: true })}</TableCell>
                             <TableCell className="text-right">
                                 <div className="flex gap-2 justify-end">
                                     <Button asChild variant="ghost" size="icon"><Link href="#"><Download className="h-4 w-4"/></Link></Button>
@@ -147,33 +209,30 @@ export default function AdminDashboard() {
         </Card>
         <Card className="lg:col-span-2 shadow-subtle">
             <CardHeader>
-                <CardTitle>Orders This Week</CardTitle>
-                <CardDescription>A summary of orders received this week.</CardDescription>
+                <CardTitle>System Overview</CardTitle>
+                <CardDescription>Key metrics and statistics.</CardDescription>
             </CardHeader>
-            <CardContent>
-                <ChartContainer config={{
-                    orders: {
-                        label: "Orders",
-                        color: "hsl(var(--primary))",
-                    },
-                }} className="h-[250px] w-full">
-                    <AreaChart accessibilityLayer data={weeklyData} margin={{ top: 5, right: 20, left: -10, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                        <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{fill: 'hsl(var(--muted-foreground))', fontSize: 12}} />
-                        <YAxis tickLine={false} axisLine={false} tick={{fill: 'hsl(var(--muted-foreground))', fontSize: 12}} />
-                        <ChartTooltip
-                            cursor={{ fill: 'hsl(var(--accent))', opacity: 0.1 }}
-                            content={<ChartTooltipContent />}
-                        />
-                        <defs>
-                            <linearGradient id="colorOrders" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="var(--color-orders)" stopOpacity={0.8}/>
-                                <stop offset="95%" stopColor="var(--color-orders)" stopOpacity={0}/>
-                            </linearGradient>
-                        </defs>
-                        <Area type="monotone" dataKey="orders" stroke="var(--color-orders)" fill="url(#colorOrders)" />
-                    </AreaChart>
-                </ChartContainer>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium">Total Orders</span>
+                  <span className="text-2xl font-bold">{totalOrders}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium">Total Pages</span>
+                  <span className="text-2xl font-bold">{totalPages}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium">Active Students</span>
+                  <span className="text-2xl font-bold">{totalStudents}</span>
+                </div>
+              </div>
+              <div className="pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  <p>Average pages per order: {totalOrders > 0 ? Math.round(totalPages / totalOrders) : 0}</p>
+                  <p>Orders per student: {totalStudents > 0 ? Math.round(totalOrders / totalStudents) : 0}</p>
+                </div>
+              </div>
             </CardContent>
         </Card>
       </div>

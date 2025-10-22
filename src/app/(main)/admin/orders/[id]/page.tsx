@@ -167,8 +167,8 @@ export default function AdminOrderDetailPage({ params }: { params: { id: string 
                     <div className="flex items-center gap-4">
                         <FileText className="h-5 w-5 text-muted-foreground" />
                         <div>
-                            <p className="text-sm text-muted-foreground">Current Quota</p>
-                            <p className="font-semibold">{student?.pageQuota} pages</p>
+                            <p className="text-sm text-muted-foreground">Current Credits</p>
+                            <p className="font-semibold">{student?.creditsRemaining} credits</p>
                         </div>
                     </div>
                      <div className="flex items-center gap-4">

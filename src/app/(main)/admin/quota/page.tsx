@@ -18,7 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { mockUsers } from "@/lib/mock-data";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useCollection } from "@/firebase/firestore/use-collection";
+import { collection, query, orderBy, limit, doc, updateDoc, writeBatch } from "firebase/firestore";
+import { useFirebase, useMemoFirebase } from "@/firebase";
+import { useAuthContext } from "@/context/AuthContext";
 import { RefreshCw, UserPlus, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -31,57 +35,162 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
+import type { User } from "@/types";
 
-const students = mockUsers.filter(u => u.role === 'student');
-
-export default function AdminQuotaPage() {
+export default function AdminCreditsPage() {
     const [selectedStudent, setSelectedStudent] = useState('');
     const [adjustment, setAdjustment] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const { toast } = useToast();
+    const { firestore } = useFirebase();
+    const { user: currentUser } = useAuthContext();
 
-    const handleReplenish = () => {
+    // Get all users (students)
+    const usersQuery = useMemoFirebase(() => {
+        if (!currentUser?.isAdmin) return null;
+        return query(collection(firestore, 'users'), orderBy('createdAt', 'desc'), limit(100));
+    }, [firestore, currentUser?.isAdmin]);
+
+    const { data: allUsers, isLoading: usersLoading } = useCollection<User>(usersQuery);
+
+    // Filter to only show students (non-admin users)
+    const students = allUsers?.filter(user => user.role !== 'admin') || [];
+
+    const handleReplenish = async () => {
+        if (!students.length) return;
+        
         setIsLoading(true);
-        setTimeout(() => {
+        try {
+            const batch = writeBatch(firestore);
+            
+            students.forEach(student => {
+                const userRef = doc(firestore, 'users', student.id);
+                batch.update(userRef, {
+                    creditsRemaining: 40,
+                    lastReplenishedAt: new Date()
+                });
+            });
+            
+            await batch.commit();
+            
+            toast({ 
+                title: 'Success!', 
+                description: `All ${students.length} student credits have been replenished to 40 credits.`
+            });
+        } catch (error: any) {
+            console.error('Failed to replenish credits:', error);
+            toast({
+                variant: "destructive",
+                title: "Error",
+                description: "Failed to replenish credits. Please try again."
+            });
+        } finally {
             setIsLoading(false);
-            toast({ title: 'Success!', description: 'All student credits have been replenished to 40 credits.'});
-        }, 1500)
+        }
     }
 
-    const handleAdjustment = () => {
+    const handleAdjustment = async () => {
+        if (!selectedStudent || !adjustment) return;
+        
+        const adjustmentValue = parseInt(adjustment);
+        if (isNaN(adjustmentValue)) {
+            toast({
+                variant: "destructive",
+                title: "Invalid Input",
+                description: "Please enter a valid number for credits adjustment."
+            });
+            return;
+        }
+        
         setIsLoading(true);
-        setTimeout(() => {
-            setIsLoading(false);
-            toast({ title: 'Success!', description: `Quota for the selected student has been adjusted.`});
+        try {
+            const studentRef = doc(firestore, 'users', selectedStudent);
+            const studentData = students.find(s => s.id === selectedStudent);
+            
+            if (!studentData) {
+                throw new Error('Student not found');
+            }
+            
+            const newCredits = Math.max(0, studentData.creditsRemaining + adjustmentValue);
+            
+            await updateDoc(studentRef, {
+                creditsRemaining: newCredits,
+                lastAdjustedAt: new Date()
+            });
+            
+            toast({ 
+                title: 'Success!', 
+                description: `Credits for ${studentData.email} have been adjusted by ${adjustmentValue}. New total: ${newCredits} credits.`
+            });
+            
             setSelectedStudent('');
             setAdjustment('');
-        }, 1500)
+        } catch (error: any) {
+            console.error('Failed to adjust credits:', error);
+            toast({
+                variant: "destructive",
+                title: "Error",
+                description: "Failed to adjust credits. Please try again."
+            });
+        } finally {
+            setIsLoading(false);
+        }
     }
 
     const studentData = students.find(s => s.id === selectedStudent);
+
+    if (usersLoading) {
+        return (
+            <div className="grid gap-8 md:grid-cols-2">
+                <Card className="shadow-subtle">
+                    <CardHeader>
+                        <Skeleton className="h-6 w-48" />
+                        <Skeleton className="h-4 w-64" />
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <Skeleton className="h-4 w-64" />
+                        <Skeleton className="h-10 w-full" />
+                    </CardContent>
+                </Card>
+                <Card className="shadow-subtle">
+                    <CardHeader>
+                        <Skeleton className="h-6 w-48" />
+                        <Skeleton className="h-4 w-64" />
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <Skeleton className="h-10 w-full" />
+                        <Skeleton className="h-10 w-full" />
+                        <Skeleton className="h-10 w-full" />
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
 
   return (
     <div className="grid gap-8 md:grid-cols-2">
       <Card className="shadow-subtle">
         <CardHeader>
           <CardTitle>Bulk Replenishment</CardTitle>
-          <CardDescription>Reset all student quotas to the default monthly amount.</CardDescription>
+          <CardDescription>Reset all student credits to the default amount.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">The last bulk replenishment was on October 1, 2023.</p>
+          <p className="text-sm text-muted-foreground">
+            This will reset credits for {students.length} students to 40 credits each.
+          </p>
           <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button className="w-full" disabled={isLoading}>
+                <Button className="w-full" disabled={isLoading || students.length === 0}>
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                    Replenish All Quotas to 40 Pages
+                    Replenish All Credits to 40
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                   <AlertDialogHeader>
                       <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                       <AlertDialogDescription>
-                          This action will reset the page quota for ALL students to 40 pages. This cannot be undone.
+                          This action will reset the credits for ALL {students.length} students to 40 credits. This cannot be undone.
                       </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -96,7 +205,7 @@ export default function AdminQuotaPage() {
       <Card className="shadow-subtle">
         <CardHeader>
           <CardTitle>Individual Adjustments</CardTitle>
-          <CardDescription>Manually add or set the quota for a specific student.</CardDescription>
+          <CardDescription>Manually add or subtract credits for a specific student.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -108,7 +217,7 @@ export default function AdminQuotaPage() {
               <SelectContent>
                 {students.map(student => (
                   <SelectItem key={student.id} value={student.id}>
-                    {student.email}
+                    {student.email} ({student.creditsRemaining} credits)
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -122,13 +231,18 @@ export default function AdminQuotaPage() {
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="adjustment">Credits to Add/Set</Label>
-            <Input id="adjustment" type="number" placeholder="e.g., 10 or -5" value={adjustment} onChange={e => setAdjustment(e.target.value)} disabled={!selectedStudent} />
-          </div>
-
-           <div className="space-y-2">
-            <Label htmlFor="reason">Reason / Notes (optional)</Label>
-            <Input id="reason" placeholder="e.g., Bonus for referral" disabled={!selectedStudent} />
+            <Label htmlFor="adjustment">Credits to Add/Subtract</Label>
+            <Input 
+              id="adjustment" 
+              type="number" 
+              placeholder="e.g., 10 or -5" 
+              value={adjustment} 
+              onChange={e => setAdjustment(e.target.value)} 
+              disabled={!selectedStudent} 
+            />
+            <p className="text-xs text-muted-foreground">
+              Positive numbers add credits, negative numbers subtract credits.
+            </p>
           </div>
 
           <Button className="w-full" onClick={handleAdjustment} disabled={!selectedStudent || !adjustment || isLoading}>

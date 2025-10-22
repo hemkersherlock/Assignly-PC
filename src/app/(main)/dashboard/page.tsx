@@ -43,7 +43,7 @@ export default function StudentDashboard() {
             <div className="grid gap-8">
                 <Card className="bg-primary text-primary-foreground shadow-subtle">
                     <CardHeader>
-                        <CardDescription className="text-primary-foreground/80">Remaining page quota this month</CardDescription>
+                        <CardDescription className="text-primary-foreground/80">Your current credits</CardDescription>
                         <Skeleton className="h-16 w-1/2 bg-primary/50" />
                     </CardHeader>
                     <CardContent>
