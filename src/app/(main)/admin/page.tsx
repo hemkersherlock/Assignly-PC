@@ -26,17 +26,10 @@ export default function AdminDashboard() {
   const { firestore } = useFirebase();
   const { user: currentUser } = useAuthContext();
 
-  // Get all orders from all users
-  const allOrdersQuery = useMemoFirebase(() => {
-    if (!currentUser?.isAdmin) return null;
-    return query(
-      collection(firestore, 'analytics', 'all_orders', 'orders'),
-      orderBy('createdAt', 'desc'),
-      limit(50)
-    );
-  }, [firestore, currentUser?.isAdmin]);
-
-  const { data: allOrders, isLoading: ordersLoading } = useCollection<Order>(allOrdersQuery);
+  // For now, we'll show a simplified dashboard without orders
+  // TODO: Implement proper order aggregation
+  const allOrders: Order[] = [];
+  const ordersLoading = false;
 
   // Get all users for stats
   const allUsersQuery = useMemoFirebase(() => {
@@ -47,21 +40,16 @@ export default function AdminDashboard() {
   const { data: allUsers, isLoading: usersLoading } = useCollection<User>(allUsersQuery);
 
   // Calculate real statistics
-  const activeOrders = allOrders?.filter(o => o.status === 'pending' || o.status === 'in_progress') || [];
-  const pendingCount = allOrders?.filter(o => o.status === 'pending').length || 0;
-  const inProgressCount = allOrders?.filter(o => o.status === 'in_progress').length || 0;
-  const completedToday = allOrders?.filter(o => {
-    if (o.status !== 'completed' || !o.completedAt) return false;
-    const today = new Date().toDateString();
-    const completedDate = o.completedAt instanceof Date ? o.completedAt : o.completedAt.toDate();
-    return completedDate.toDateString() === today;
-  }).length || 0;
+  const activeOrders: Order[] = [];
+  const pendingCount = 0;
+  const inProgressCount = 0;
+  const completedToday = 0;
 
   const totalStudents = allUsers?.length || 0;
-  const totalOrders = allOrders?.length || 0;
-  const totalPages = allOrders?.reduce((sum, order) => sum + (order.pageCount || 0), 0) || 0;
+  const totalOrders = 0; // Will implement order aggregation later
+  const totalPages = 0; // Will implement order aggregation later
 
-  const isLoading = ordersLoading || usersLoading;
+  const isLoading = usersLoading;
 
   if (isLoading) {
     return (

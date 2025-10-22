@@ -49,13 +49,23 @@ export default function AdminCreditsPage() {
     // Get all users (students)
     const usersQuery = useMemoFirebase(() => {
         if (!currentUser?.isAdmin) return null;
-        return query(collection(firestore, 'users'), orderBy('createdAt', 'desc'), limit(100));
+        const q = query(collection(firestore, 'users'), limit(100));
+        console.log('🔍 Creating users query for credits:', q);
+        return q;
     }, [firestore, currentUser?.isAdmin]);
 
-    const { data: allUsers, isLoading: usersLoading } = useCollection<User>(usersQuery);
+    const { data: allUsers, isLoading: usersLoading, error: usersError } = useCollection<User>(usersQuery);
 
     // Filter to only show students (non-admin users)
     const students = allUsers?.filter(user => user.role !== 'admin') || [];
+
+    console.log('🔍 Credits Page Debug:', {
+        currentUser: currentUser?.isAdmin,
+        allUsers: allUsers?.length,
+        students: students.length,
+        usersLoading,
+        usersError
+    });
 
     const handleReplenish = async () => {
         if (!students.length) return;
@@ -162,6 +172,37 @@ export default function AdminCreditsPage() {
                         <Skeleton className="h-10 w-full" />
                         <Skeleton className="h-10 w-full" />
                         <Skeleton className="h-10 w-full" />
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+
+    if (usersError) {
+        return (
+            <div className="grid gap-8 md:grid-cols-2">
+                <Card className="shadow-subtle">
+                    <CardHeader>
+                        <CardTitle>Bulk Replenishment</CardTitle>
+                        <CardDescription>Reset all student credits to the default amount.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-center py-8">
+                            <p className="text-red-500">Error loading students: {usersError.message}</p>
+                            <p className="text-sm text-muted-foreground mt-2">Please try refreshing the page.</p>
+                        </div>
+                    </CardContent>
+                </Card>
+                <Card className="shadow-subtle">
+                    <CardHeader>
+                        <CardTitle>Individual Adjustments</CardTitle>
+                        <CardDescription>Manually add or subtract credits for a specific student.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-center py-8">
+                            <p className="text-red-500">Error loading students: {usersError.message}</p>
+                            <p className="text-sm text-muted-foreground mt-2">Please try refreshing the page.</p>
+                        </div>
                     </CardContent>
                 </Card>
             </div>

@@ -35,13 +35,25 @@ export default function AdminStudentsPage() {
   // Get all users (students)
   const usersQuery = useMemoFirebase(() => {
     if (!currentUser?.isAdmin) return null;
-    return query(collection(firestore, 'users'), orderBy('createdAt', 'desc'), limit(100));
+    const q = query(collection(firestore, 'users'), limit(100));
+    console.log('🔍 Creating users query:', q);
+    return q;
   }, [firestore, currentUser?.isAdmin]);
 
-  const { data: allUsers, isLoading } = useCollection<User>(usersQuery);
+  const { data: allUsers, isLoading, error } = useCollection<User>(usersQuery);
 
   // Filter to only show students (non-admin users)
   const students = allUsers?.filter(user => user.role !== 'admin') || [];
+
+  console.log('🔍 Students Page Debug:', {
+    currentUser: currentUser?.email,
+    isAdmin: currentUser?.isAdmin,
+    usersQuery: usersQuery,
+    allUsers: allUsers?.length,
+    students: students.length,
+    isLoading,
+    error: error?.message
+  });
 
   if (isLoading) {
     return (
@@ -63,6 +75,23 @@ export default function AdminStudentsPage() {
                 <Skeleton className="h-8 w-32" />
               </div>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="shadow-subtle">
+        <CardHeader>
+          <CardTitle>Student Management</CardTitle>
+          <CardDescription>View and manage all student accounts.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <p className="text-red-500">Error loading students: {error.message}</p>
+            <p className="text-sm text-muted-foreground mt-2">Please try refreshing the page.</p>
           </div>
         </CardContent>
       </Card>
