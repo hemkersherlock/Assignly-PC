@@ -20,6 +20,10 @@ export interface User {
   lastOrderAt?: Date;          // New field for last activity
 }
 
+export interface AppUser extends User {
+  // AppUser is the same as User for now
+}
+
 export interface Order {
   id: string;
   studentId: string;
@@ -28,7 +32,7 @@ export interface Order {
   originalFiles: { name: string, url: string }[];
   orderType: "assignment" | "practical";
   pageCount: number;
-  status: "pending" | "in_progress" | "completed";
+  status: "pending" | "writing" | "on the way";
   completedFileUrl: string | null;
   createdAt: any;
   startedAt: any | null;

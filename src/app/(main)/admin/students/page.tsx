@@ -34,11 +34,11 @@ export default function AdminStudentsPage() {
 
   // Get all users (students)
   const usersQuery = useMemoFirebase(() => {
-    if (!currentUser?.isAdmin) return null;
+    if (!currentUser || currentUser.role !== 'admin') return null;
     const q = query(collection(firestore, 'users'), limit(100));
     console.log('🔍 Creating users query:', q);
     return q;
-  }, [firestore, currentUser?.isAdmin]);
+  }, [firestore, currentUser?.role]);
 
   const { data: allUsers, isLoading, error } = useCollection<User>(usersQuery);
 
@@ -47,7 +47,8 @@ export default function AdminStudentsPage() {
 
   console.log('🔍 Students Page Debug:', {
     currentUser: currentUser?.email,
-    isAdmin: currentUser?.isAdmin,
+    userRole: currentUser?.role,
+    isAdmin: currentUser?.role === 'admin',
     usersQuery: usersQuery,
     allUsers: allUsers?.length,
     students: students.length,
@@ -63,19 +64,49 @@ export default function AdminStudentsPage() {
           <CardDescription>View and manage all student accounts.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="flex items-center space-x-4">
-                <Skeleton className="h-4 w-48" />
-                <Skeleton className="h-4 w-16" />
-                <Skeleton className="h-4 w-16" />
-                <Skeleton className="h-4 w-16" />
-                <Skeleton className="h-6 w-20" />
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-8 w-32" />
-              </div>
-            ))}
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Email</TableHead>
+                <TableHead className="text-center">Credits</TableHead>
+                <TableHead className="text-center">Total Orders</TableHead>
+                <TableHead className="text-center">Total Pages</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Last Order</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[...Array(5)].map((_, i) => (
+                <TableRow key={`skeleton-${i}`}>
+                  <TableCell>
+                    <Skeleton className="h-4 w-48" />
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Skeleton className="h-4 w-8 mx-auto" />
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Skeleton className="h-4 w-8 mx-auto" />
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Skeleton className="h-4 w-8 mx-auto" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-6 w-16" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-24" />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex gap-2 justify-end">
+                      <Skeleton className="h-8 w-20" />
+                      <Skeleton className="h-8 w-24" />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     );

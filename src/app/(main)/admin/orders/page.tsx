@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { useFirebase } from '@/firebase';
 import {
   Card,
@@ -19,10 +19,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/shared/StatusBadge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatusDropdown, OrderStatus } from "@/components/shared/StatusDropdown";
 import { format, formatDistanceToNow } from "date-fns";
-import { Download, Edit } from "lucide-react";
-import Link from 'next/link';
+import { Download } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface RealOrder {
   id: string;
@@ -40,7 +41,9 @@ interface RealOrder {
 export default function AdminAllOrdersPage() {
   const [orders, setOrders] = useState<RealOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const { firestore } = useFirebase();
+  const { toast } = useToast();
 
   useEffect(() => {
     const fetchAllOrders = async () => {
@@ -98,6 +101,38 @@ export default function AdminAllOrdersPage() {
     fetchAllOrders();
   }, [firestore]);
 
+  const handleStatusChange = async (orderId: string, studentId: string, newStatus: OrderStatus) => {
+    setUpdatingStatus(orderId);
+    try {
+      const orderRef = doc(firestore, `users/${studentId}/orders/${orderId}`);
+      await updateDoc(orderRef, {
+        status: newStatus,
+        updatedAt: new Date()
+      });
+
+      // Update local state
+      setOrders(prev => prev.map(order => 
+        order.id === orderId 
+          ? { ...order, status: newStatus }
+          : order
+      ));
+
+      toast({
+        title: "Status Updated!",
+        description: `Order status changed to "${newStatus}"`,
+      });
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast({
+        variant: "destructive",
+        title: "Update Failed",
+        description: "Failed to update order status. Please try again.",
+      });
+    } finally {
+      setUpdatingStatus(null);
+    }
+  };
+
   if (loading) {
     return (
       <Card className="shadow-subtle">
@@ -106,7 +141,49 @@ export default function AdminAllOrdersPage() {
           <CardDescription>Loading orders from database...</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="text-center py-8">Loading...</div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Order ID</TableHead>
+                <TableHead>Student</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead className="text-center">Pages</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Submitted</TableHead>
+                <TableHead>Files</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[...Array(5)].map((_, i) => (
+                <TableRow key={`skeleton-${i}`}>
+                  <TableCell>
+                    <Skeleton className="h-4 w-20" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-32" />
+                  </TableCell>
+                  <TableCell>
+                    <div className="space-y-2">
+                      <Skeleton className="h-6 w-16" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Skeleton className="h-4 w-8 mx-auto" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-8 w-20" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-20" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-8 w-16" />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     );
@@ -129,7 +206,6 @@ export default function AdminAllOrdersPage() {
               <TableHead>Status</TableHead>
               <TableHead>Submitted</TableHead>
               <TableHead>Files</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -157,7 +233,11 @@ export default function AdminAllOrdersPage() {
                 </TableCell>
                 <TableCell className="text-center">{order.pageCount}</TableCell>
                 <TableCell>
-                  <StatusBadge status={order.status} />
+                  <StatusDropdown
+                    currentStatus={order.status}
+                    onStatusChange={(newStatus) => handleStatusChange(order.id, order.studentId, newStatus)}
+                    disabled={updatingStatus === order.id}
+                  />
                 </TableCell>
                 <TableCell>
                   {order.createdAt 
@@ -183,19 +263,11 @@ export default function AdminAllOrdersPage() {
                     ))}
                   </div>
                 </TableCell>
-                <TableCell className="text-right">
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/admin/orders/${order.id}`}>
-                      <Edit className="mr-2 h-4 w-4" />
-                      Manage
-                    </Link>
-                  </Button>
-                </TableCell>
               </TableRow>
             ))}
             {orders.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={7} className="h-24 text-center">
                   No orders found in the database.
                 </TableCell>
               </TableRow>

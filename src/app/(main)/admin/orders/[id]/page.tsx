@@ -1,6 +1,7 @@
 
 "use client";
 
+import { use } from "react";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +14,9 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 
-export default function AdminOrderDetailPage({ params }: { params: { id: string } }) {
-  const [order, setOrder] = useState(() => mockOrders.find(o => o.id === params.id));
+export default function AdminOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const [order, setOrder] = useState(() => mockOrders.find(o => o.id === id));
   const [note, setNote] = useState(order?.notes || "");
   const [isUpdating, setIsUpdating] = useState(false);
   const { toast } = useToast();

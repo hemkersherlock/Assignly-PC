@@ -1,12 +1,14 @@
 
 "use client";
 
+import { use } from "react";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { format } from "date-fns";
-import { Download, Save, Clock, Hash, Calendar, CheckCircle, FileText } from "lucide-react";
+import { Download, Save, Clock, Hash, Calendar, CheckCircle, FileText, ArrowLeft } from "lucide-react";
 import { useFirebase, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/context/AuthContext";
 import { useDoc } from "@/firebase/firestore/use-doc";
@@ -56,23 +58,41 @@ function StudentOrderDetailSkeleton() {
 }
 
 
-export default function StudentOrderDetailPage({ params }: { params: { id: string } }) {
+export default function StudentOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { user: appUser } = useAuthContext();
   const { firestore } = useFirebase();
+  
+  // Unwrap the params Promise
+  const { id } = use(params);
 
   const orderRef = useMemoFirebase(() => {
     if (!appUser?.id) return null;
-    return doc(firestore, "users", appUser.id, "orders", params.id);
-  }, [firestore, appUser?.id, params.id]);
+    return doc(firestore, "users", appUser.id, "orders", id);
+  }, [firestore, appUser?.id, id]);
 
   const { data: order, isLoading } = useDoc<Order>(orderRef);
+
 
   if (isLoading) {
     return <StudentOrderDetailSkeleton />;
   }
 
   if (!order && !isLoading) {
-    notFound();
+    return (
+      <div className="max-w-3xl mx-auto p-8">
+        <Card className="shadow-subtle">
+          <CardHeader>
+            <CardTitle>Order Not Found</CardTitle>
+            <CardDescription>The requested order could not be found.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild className="mt-4">
+              <Link href="/orders">Back to Orders</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
   
   if (!order) {
@@ -80,24 +100,41 @@ export default function StudentOrderDetailPage({ params }: { params: { id: strin
   }
 
   return (
-    <Card className="max-w-3xl mx-auto shadow-subtle">
-      <CardHeader>
-        <div className="flex justify-between items-start">
-            <div>
-                <CardTitle>{order.assignmentTitle}</CardTitle>
-                <CardDescription>Summary of your order: <span className="font-mono text-xs">{order.id}</span></CardDescription>
-            </div>
-            <StatusBadge status={order.status} />
-        </div>
-      </CardHeader>
+    <div className="max-w-3xl mx-auto space-y-4">
+      <Button asChild variant="outline" className="mb-4">
+        <Link href="/orders">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Orders
+        </Link>
+      </Button>
+      
+      <Card className="shadow-subtle">
+        <CardHeader>
+          <div className="flex justify-between items-start">
+              <div>
+                  <CardTitle>{order.assignmentTitle}</CardTitle>
+                  <CardDescription>Summary of your order: <span className="font-mono text-xs">{order.id}</span></CardDescription>
+              </div>
+              <StatusBadge status={order.status} />
+          </div>
+        </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid gap-6 md:grid-cols-2">
             <div className="flex items-start gap-4">
                 <FileText className="h-5 w-5 text-muted-foreground mt-1" />
                 <div>
-                    <p className="text-sm text-muted-foreground">Filename(s)</p>
-                    <div className="font-semibold flex flex-col">
-                        {order.originalFiles.map((file, idx) => <span key={idx}>{file.name}</span>)}
+                    <p className="text-sm text-muted-foreground">Uploaded Files</p>
+                    <div className="font-semibold flex flex-col gap-1">
+                        {order.originalFiles && order.originalFiles.length > 0 ? (
+                            order.originalFiles.map((file, idx) => (
+                                <div key={idx} className="flex items-center gap-2 p-2 bg-muted/50 rounded-md">
+                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                    <span className="text-sm">{file.name}</span>
+                                </div>
+                            ))
+                        ) : (
+                            <span className="text-muted-foreground">No files uploaded</span>
+                        )}
                     </div>
                 </div>
             </div>
@@ -144,6 +181,29 @@ export default function StudentOrderDetailPage({ params }: { params: { id: strin
             )}
         </div>
         
+        {order.originalFiles && order.originalFiles.length > 0 && (
+          <div className="border-t pt-6">
+            <div className="flex items-start gap-4">
+              <Download className="h-5 w-5 text-muted-foreground mt-1" />
+              <div>
+                <p className="text-sm text-muted-foreground mb-3">Download Files</p>
+                <div className="space-y-2">
+                  {order.originalFiles.map((file, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <Button asChild variant="outline" size="sm">
+                        <a href={file.url} target="_blank" rel="noopener noreferrer">
+                          <Download className="mr-2 h-4 w-4" />
+                          {file.name}
+                        </a>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
         {order.status === 'completed' && (
           <div className="border-t pt-6 flex flex-col md:flex-row gap-4">
             <Button className="w-full md:w-auto">
@@ -158,5 +218,6 @@ export default function StudentOrderDetailPage({ params }: { params: { id: strin
         )}
       </CardContent>
     </Card>
+    </div>
   );
 }

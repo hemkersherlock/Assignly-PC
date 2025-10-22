@@ -48,11 +48,11 @@ export default function AdminCreditsPage() {
 
     // Get all users (students)
     const usersQuery = useMemoFirebase(() => {
-        if (!currentUser?.isAdmin) return null;
+        if (!currentUser || currentUser.role !== 'admin') return null;
         const q = query(collection(firestore, 'users'), limit(100));
         console.log('🔍 Creating users query for credits:', q);
         return q;
-    }, [firestore, currentUser?.isAdmin]);
+    }, [firestore, currentUser?.role]);
 
     const { data: allUsers, isLoading: usersLoading, error: usersError } = useCollection<User>(usersQuery);
 
@@ -60,11 +60,13 @@ export default function AdminCreditsPage() {
     const students = allUsers?.filter(user => user.role !== 'admin') || [];
 
     console.log('🔍 Credits Page Debug:', {
-        currentUser: currentUser?.isAdmin,
+        currentUser: currentUser?.email,
+        userRole: currentUser?.role,
+        isAdmin: currentUser?.role === 'admin',
         allUsers: allUsers?.length,
         students: students.length,
         usersLoading,
-        usersError
+        usersError: usersError?.message
     });
 
     const handleReplenish = async () => {

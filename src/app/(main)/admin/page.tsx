@@ -14,44 +14,128 @@ import { Clock, Download, Loader, CheckCircle, Users, FileText } from "lucide-re
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { useCollection } from "@/firebase/firestore/use-collection";
-import { collection, query, orderBy, where, limit } from "firebase/firestore";
+import { collection, query, orderBy, where, limit, getDocs } from "firebase/firestore";
 import { useFirebase, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/context/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Order, User } from "@/types";
 import { safeFormatDistance } from "@/lib/date-utils";
+import { useState, useEffect } from "react";
 
 
 export default function AdminDashboard() {
   const { firestore } = useFirebase();
   const { user: currentUser } = useAuthContext();
 
-  // For now, we'll show a simplified dashboard without orders
-  // TODO: Implement proper order aggregation
-  const allOrders: Order[] = [];
-  const ordersLoading = false;
+  // Get all orders from all users
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAllOrders = async () => {
+      if (!currentUser || currentUser.role !== 'admin') {
+        console.log('❌ User is not admin, skipping order fetch');
+        setOrdersLoading(false);
+        return;
+      }
+      
+      try {
+        setOrdersLoading(true);
+        console.log('🔍 Fetching all orders from Firebase...');
+        
+        // Get all users
+        const usersSnapshot = await getDocs(collection(firestore, 'users'));
+        const orders: Order[] = [];
+        
+        for (const userDoc of usersSnapshot.docs) {
+          const userId = userDoc.id;
+          
+          // Get orders for this user
+          const ordersSnapshot = await getDocs(
+            collection(firestore, `users/${userId}/orders`)
+          );
+          
+          ordersSnapshot.forEach(orderDoc => {
+            const orderData = orderDoc.data();
+            orders.push({
+              id: orderDoc.id,
+              studentId: userId,
+              studentEmail: orderData.studentEmail || 'Unknown',
+              assignmentTitle: orderData.assignmentTitle || 'Untitled',
+              orderType: orderData.orderType || 'assignment',
+              pageCount: orderData.pageCount || 0,
+              status: orderData.status || 'pending',
+              createdAt: orderData.createdAt?.toDate() || new Date(),
+              originalFiles: orderData.originalFiles || [],
+              cloudinaryFolder: orderData.cloudinaryFolder || '',
+            } as Order);
+          });
+        }
+        
+        // Sort by creation date (newest first)
+        orders.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        
+        console.log(`✅ Found ${orders.length} orders from Firebase`);
+        setAllOrders(orders);
+        
+      } catch (error) {
+        console.error('❌ Error fetching orders:', error);
+        setAllOrders([]); // Set empty array on error
+      } finally {
+        setOrdersLoading(false);
+      }
+    };
+
+    // Add timeout to prevent infinite loading
+    const timeoutId = setTimeout(() => {
+      if (ordersLoading) {
+        console.log('⏰ Orders loading timeout, setting to false');
+        setOrdersLoading(false);
+      }
+    }, 10000); // 10 second timeout
+
+    fetchAllOrders();
+
+    return () => clearTimeout(timeoutId);
+  }, [firestore, currentUser?.role]);
 
   // Get all users for stats
   const allUsersQuery = useMemoFirebase(() => {
-    if (!currentUser?.isAdmin) return null;
+    if (!currentUser || currentUser.role !== 'admin') return null;
     return query(collection(firestore, 'users'), limit(100));
-  }, [firestore, currentUser?.isAdmin]);
+  }, [firestore, currentUser?.role]);
 
   const { data: allUsers, isLoading: usersLoading } = useCollection<User>(allUsersQuery);
 
-  // Calculate real statistics
-  const activeOrders: Order[] = [];
-  const pendingCount = 0;
-  const inProgressCount = 0;
-  const completedToday = 0;
+  // Calculate real statistics from actual data
+  const activeOrders = allOrders.filter(o => o.status === 'pending' || o.status === 'writing');
+  const pendingCount = allOrders.filter(o => o.status === 'pending').length;
+  const inProgressCount = allOrders.filter(o => o.status === 'writing').length;
+  const completedToday = allOrders.filter(o => {
+    if (o.status !== 'on the way') return false;
+    const today = new Date().toDateString();
+    const orderDate = o.createdAt.toDateString();
+    return orderDate === today;
+  }).length;
 
   const totalStudents = allUsers?.length || 0;
-  const totalOrders = 0; // Will implement order aggregation later
-  const totalPages = 0; // Will implement order aggregation later
+  const totalOrders = allOrders.length;
+  const totalPages = allOrders.reduce((sum, order) => sum + order.pageCount, 0);
 
-  const isLoading = usersLoading;
+  const isLoading = usersLoading || ordersLoading;
 
-  if (isLoading) {
+  console.log('🔍 Admin Dashboard Debug:', {
+    usersLoading,
+    ordersLoading,
+    isLoading,
+    allUsers: allUsers?.length,
+    allOrders: allOrders.length,
+    currentUser: currentUser?.email,
+    isAdmin: currentUser?.role === 'admin'
+  });
+
+  // Show loading only for a reasonable time, then show data
+  if (isLoading && !allUsers && !allOrders.length) {
     return (
       <div className="container mx-auto p-0 grid gap-8">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -68,23 +152,41 @@ export default function AdminDashboard() {
             </Card>
           ))}
         </div>
-        <div className="grid gap-8 lg:grid-cols-5">
-          <Card className="lg:col-span-3 shadow-subtle">
+        <div className="grid gap-8">
+          <Card className="shadow-subtle">
             <CardHeader>
               <Skeleton className="h-6 w-32" />
               <Skeleton className="h-4 w-64" />
             </CardHeader>
             <CardContent>
-              <Skeleton className="h-64 w-full" />
-            </CardContent>
-          </Card>
-          <Card className="lg:col-span-2 shadow-subtle">
-            <CardHeader>
-              <Skeleton className="h-6 w-32" />
-              <Skeleton className="h-4 w-48" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-64 w-full" />
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Student</TableHead>
+                    <TableHead>Assignment</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Submitted</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[...Array(5)].map((_, i) => (
+                    <TableRow key={`skeleton-${i}`}>
+                      <TableCell>
+                        <Skeleton className="h-4 w-32" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-40" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-6 w-16" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-20" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </div>
@@ -137,10 +239,10 @@ export default function AdminDashboard() {
         </Card>
       </div>
       
-      <div className="grid gap-8 lg:grid-cols-5">
-        <Card className="lg:col-span-3 shadow-subtle">
+      <div className="grid gap-8">
+        <Card className="shadow-subtle">
           <CardHeader>
-              <CardTitle>Active Orders</CardTitle>
+              <CardTitle>Active Orders ({activeOrders.length})</CardTitle>
               <CardDescription>All orders that are currently pending or in progress.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -151,7 +253,7 @@ export default function AdminDashboard() {
                         <TableHead>Type</TableHead>
                         <TableHead>Pages</TableHead>
                         <TableHead>Time Elapsed</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>Status</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -178,11 +280,17 @@ export default function AdminDashboard() {
                             </TableCell>
                             <TableCell>{order.pageCount}</TableCell>
                             <TableCell>{safeFormatDistance(order.createdAt, { addSuffix: true })}</TableCell>
-                            <TableCell className="text-right">
-                                <div className="flex gap-2 justify-end">
-                                    <Button asChild variant="ghost" size="icon"><Link href="#"><Download className="h-4 w-4"/></Link></Button>
-                                    <Button asChild variant="outline" size="sm"><Link href={`/admin/orders/${order.id}`}>View Details</Link></Button>
-                                </div>
+                            <TableCell>
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                order.status === 'pending' 
+                                  ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300'
+                                  : order.status === 'writing'
+                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300'
+                                  : 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300'
+                              }`}>
+                                {order.status === 'pending' ? '⏳ Pending' : 
+                                 order.status === 'writing' ? '✍️ Writing' : '🚀 On the Way'}
+                              </span>
                             </TableCell>
                         </TableRow>
                     ))}
@@ -194,34 +302,6 @@ export default function AdminDashboard() {
                 </TableBody>
             </Table>
           </CardContent>
-        </Card>
-        <Card className="lg:col-span-2 shadow-subtle">
-            <CardHeader>
-                <CardTitle>System Overview</CardTitle>
-                <CardDescription>Key metrics and statistics.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium">Total Orders</span>
-                  <span className="text-2xl font-bold">{totalOrders}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium">Total Pages</span>
-                  <span className="text-2xl font-bold">{totalPages}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium">Active Students</span>
-                  <span className="text-2xl font-bold">{totalStudents}</span>
-                </div>
-              </div>
-              <div className="pt-4 border-t">
-                <div className="text-sm text-muted-foreground">
-                  <p>Average pages per order: {totalOrders > 0 ? Math.round(totalPages / totalOrders) : 0}</p>
-                  <p>Orders per student: {totalStudents > 0 ? Math.round(totalOrders / totalStudents) : 0}</p>
-                </div>
-              </div>
-            </CardContent>
         </Card>
       </div>
 
