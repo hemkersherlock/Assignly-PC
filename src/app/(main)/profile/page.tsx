@@ -115,13 +115,9 @@ export default function ProfilePage() {
         <div className="max-w-4xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/dashboard" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
-                  <ArrowLeft className="h-4 w-4" />
-                  Back to Dashboard
-                </Link>
-              </Button>
-              <div className="h-6 w-px bg-border" />
+              <Link href="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Edit Profile</h1>
                 <p className="text-sm text-muted-foreground">Update your contact and academic details</p>
