@@ -1,0 +1,253 @@
+
+"use client";
+
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import Logo from "@/components/shared/Logo";
+import { useFirebase } from "@/firebase";
+import { Loader2, Mail, Lock, Sparkles, Gift } from "lucide-react";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { useToast } from "@/hooks/use-toast";
+import { doc, getDoc, updateDoc, increment, collection, getDocs } from "firebase/firestore";
+
+
+function LoginPageContent() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [referralCredits, setReferralCredits] = useState<number>(0);
+  
+  const { auth, firestore } = useFirebase();
+  const { toast } = useToast();
+  const searchParams = useSearchParams();
+
+  // Track referral click on page load
+  useEffect(() => {
+    const ref = searchParams.get('ref');
+    if (ref) {
+      console.log('🔗 Referral code detected:', ref);
+      setReferralCode(ref);
+      
+      // Store in localStorage for signup
+      localStorage.setItem('referralCode', ref);
+      
+      // Track click
+      trackReferralClick(ref);
+    }
+  }, [searchParams]);
+
+  // Track click on referral link
+  const trackReferralClick = async (code: string) => {
+    try {
+      // Find referral link by code
+      const linksRef = collection(firestore, 'referral_links');
+      const linksSnapshot = await getDocs(linksRef);
+      
+      const linkDoc = linksSnapshot.docs.find(doc => doc.data().code === code);
+      
+      if (linkDoc && linkDoc.data().active) {
+        // Increment click count
+        await updateDoc(doc(firestore, 'referral_links', linkDoc.id), {
+          clicks: increment(1)
+        });
+        
+        setReferralCredits(linkDoc.data().credits);
+        
+        toast({
+          title: `🎁 Special offer!`,
+          description: `Sign up now and get ${linkDoc.data().credits} FREE credits!`,
+        });
+        
+        console.log('✅ Referral click tracked');
+      }
+    } catch (error) {
+      console.error('Error tracking referral click:', error);
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      // Only allow existing users to log in - NO new account creation
+      await signInWithEmailAndPassword(auth, email, password);
+      console.log('✅ Login successful');
+      // On successful login, the AuthContext's onAuthStateChanged will handle redirection.
+    } catch (err: any) {
+        console.error('❌ Login failed:', err);
+        
+        // Handle specific error cases
+        if (err.code === 'auth/user-not-found') {
+            setError("Account not found. This is a closed service - only pre-created accounts can access.");
+        } else if (err.code === 'auth/wrong-password') {
+            setError("Incorrect password. Please check your credentials.");
+        } else if (err.code === 'auth/invalid-email') {
+            setError("Invalid email address format.");
+        } else if (err.code === 'auth/too-many-requests') {
+            setError("Too many failed attempts. Please try again later.");
+        } else {
+            const message = err.message?.replace('Firebase: ','') || "Login failed. Please try again.";
+            setError(message);
+        }
+        
+        setIsLoading(false);
+    }
+    
+    // Add a timeout to reset loading state if redirect doesn't happen
+    setTimeout(() => {
+      if (isLoading) {
+        console.log('⏰ Login timeout - resetting loading state');
+        setIsLoading(false);
+      }
+    }, 8000); // 8 second timeout
+  };
+
+  return (
+    <div className="w-full max-w-md">
+      {/* Logo and Title - Outside Card */}
+      <div className="text-center mb-6 sm:mb-8">
+        <div className="flex justify-center items-center gap-3 mb-3">
+          <div className="relative">
+            <Logo className="h-12 w-12 sm:h-14 sm:w-14" />
+            <Sparkles className="absolute -top-1 -right-1 h-4 w-4 text-primary animate-pulse" />
+          </div>
+        </div>
+        <h1 className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+          Assignly
+        </h1>
+        <p className="text-sm sm:text-base text-muted-foreground mt-2">
+          Your assignments, handwritten with care
+        </p>
+      </div>
+
+      {/* Login Card */}
+      <Card className="border-2 shadow-2xl backdrop-blur-sm bg-white/90 dark:bg-gray-900/90">
+        <CardHeader className="space-y-2 pb-4">
+          <CardTitle className="text-xl sm:text-2xl font-semibold text-center">Welcome Back</CardTitle>
+          <CardDescription className="text-center text-xs sm:text-sm">
+            Sign in to access your account
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pb-6">
+          {/* Referral Offer Banner */}
+          {referralCredits > 0 && (
+            <div className="mb-4 p-3 rounded-lg bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 border-2 border-green-200 dark:border-green-800">
+              <div className="flex items-center gap-2">
+                <Gift className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
+                <div className="flex-1">
+                  <p className="font-semibold text-sm text-green-800 dark:text-green-200">
+                    🎉 Special Offer!
+                  </p>
+                  <p className="text-xs text-green-700 dark:text-green-300">
+                    Get <span className="font-bold">{referralCredits} FREE credits</span> when you sign up!
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <form onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
+            {/* Email Input */}
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-sm font-medium">Email Address</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="pl-10 h-11 text-sm sm:text-base"
+                />
+              </div>
+            </div>
+
+            {/* Password Input */}
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-sm font-medium">Password</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  id="password" 
+                  type="password" 
+                  placeholder="••••••••"
+                  required 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pl-10 h-11 text-sm sm:text-base"
+                />
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                <p className="text-xs sm:text-sm text-red-600 dark:text-red-400">{error}</p>
+              </div>
+            )}
+
+            {/* Login Button */}
+            <Button 
+              type="submit" 
+              className="w-full h-11 text-sm sm:text-base font-semibold shadow-lg hover:shadow-xl transition-all" 
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                "Sign In"
+              )}
+            </Button>
+
+            {/* Info Message */}
+            <div className="pt-2 text-center">
+              <p className="text-xs text-muted-foreground">
+                🔒 Closed service • Only authorized accounts
+              </p>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Footer */}
+      <p className="text-center text-xs text-muted-foreground mt-6">
+        Need help? Contact your administrator
+      </p>
+    </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="w-full max-w-md">
+        <Card className="border-2 shadow-2xl backdrop-blur-sm bg-white/90 dark:bg-gray-900/90">
+          <CardContent className="p-8 text-center">
+            <p>Loading...</p>
+          </CardContent>
+        </Card>
+      </div>
+    }>
+      <LoginPageContent />
+    </Suspense>
+  );
+}

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Assignly Icons</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .canvas-container {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+            margin: 30px 0;
+        }
+        .canvas-wrapper {
+            text-align: center;
+        }
+        canvas {
+            border: 2px solid #ccc;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        h1 { color: #3b82f6; }
+        .instructions {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .success {
+            background: #10b981;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>📱 Create Assignly App Icons</h1>
+    
+    <div class="instructions">
+        <h3>Instructions:</h3>
+        <ol>
+            <li>Click "Generate Icons" below</li>
+            <li>Click "Download 192x192" and save as <strong>icon-192.png</strong></li>
+            <li>Click "Download 512x512" and save as <strong>icon-512.png</strong></li>
+            <li>Place both files in your <strong>public</strong> folder</li>
+            <li>Deploy your app and test "Add to Home Screen"!</li>
+        </ol>
+    </div>
+
+    <button onclick="generateIcons()" style="font-size: 18px; padding: 15px 30px;">
+        🎨 Generate Icons
+    </button>
+
+    <div class="canvas-container" id="canvasContainer" style="display: none;">
+        <div class="canvas-wrapper">
+            <h3>192x192</h3>
+            <canvas id="canvas192" width="192" height="192"></canvas>
+            <br>
+            <button onclick="downloadIcon('canvas192', 'icon-192.png')">
+                ⬇️ Download 192x192
+            </button>
+        </div>
+        <div class="canvas-wrapper">
+            <h3>512x512</h3>
+            <canvas id="canvas512" width="512" height="512"></canvas>
+            <br>
+            <button onclick="downloadIcon('canvas512', 'icon-512.png')">
+                ⬇️ Download 512x512
+            </button>
+        </div>
+    </div>
+
+    <div id="successMessage" class="success">
+        ✅ Icons generated! Click the download buttons above.
+    </div>
+
+    <script>
+        function drawIcon(canvas) {
+            const ctx = canvas.getContext('2d');
+            const size = canvas.width;
+            
+            // Background gradient
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#3b82f6');
+            gradient.addColorStop(1, '#2563eb');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, size, size);
+            
+            // Add shadow for depth
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            ctx.shadowBlur = 20;
+            ctx.shadowOffsetY = 10;
+            
+            // Draw "A" letter
+            ctx.fillStyle = 'white';
+            ctx.font = `bold ${size * 0.6}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('A', size / 2, size / 2);
+            
+            // Reset shadow
+            ctx.shadowColor = 'transparent';
+            
+            // Add a subtle circle outline
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = size * 0.05;
+            ctx.beginPath();
+            ctx.arc(size / 2, size / 2, size * 0.4, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        function generateIcons() {
+            const canvas192 = document.getElementById('canvas192');
+            const canvas512 = document.getElementById('canvas512');
+            
+            drawIcon(canvas192);
+            drawIcon(canvas512);
+            
+            document.getElementById('canvasContainer').style.display = 'flex';
+            document.getElementById('successMessage').style.display = 'block';
+        }
+
+        function downloadIcon(canvasId, filename) {
+            const canvas = document.getElementById(canvasId);
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+    </script>
+</body>
+</html>
+
+
+
