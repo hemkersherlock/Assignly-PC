@@ -39,7 +39,9 @@ export const useAuthContext = () => {
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const { auth, firestore } = useFirebase();
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  // CRITICAL FIX: Start with undefined (not null) so we wait for Firebase auth to respond
+  // null = "checked and no user", undefined = "haven't checked yet"
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null | undefined>(undefined);
   const [appUser, setAppUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -188,6 +190,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     console.log('🔍 Redirect check:', { loading, pathname, appUser: !!appUser, role: appUser?.role });
     
+    // CRITICAL: Don't do ANY redirects while auth is still loading
+    // This prevents the flash: loading → redirect to /login → redirect back to /dashboard
     if (loading || !pathname) {
       console.log('⏳ Still loading or no pathname, skipping redirect');
       return;
@@ -195,15 +199,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const isAuthPage = pathname === '/login';
 
+    // Only redirect if auth check is COMPLETE
     if (appUser && isAuthPage) {
       const targetDashboard = appUser.role === 'admin' ? '/admin' : '/dashboard';
-      console.log(`✅ User is on auth page, redirecting to ${targetDashboard}`);
-      router.replace(targetDashboard); // Use replace to avoid adding to history
+      console.log(`✅ User IS logged in but on login page, redirecting to ${targetDashboard}`);
+      router.replace(targetDashboard);
     }
     
     if (!appUser && !isAuthPage) {
-       console.log(`❌ User is not authenticated and not on auth page, redirecting to /login`);
-      router.replace('/login'); // Use replace to avoid adding to history
+       console.log(`❌ User NOT logged in and not on login page, redirecting to /login`);
+      router.replace('/login');
     }
   }, [appUser, loading, pathname, router]);
 
