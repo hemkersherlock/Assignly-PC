@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useFirebase } from "@/firebase";
+import { useAuthContext } from "@/context/AuthContext";
 import { Loader2, Mail, Lock, Gift } from "lucide-react";
 import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -31,6 +32,9 @@ function LoginPageContent() {
   const { auth, firestore } = useFirebase();
   const { toast } = useToast();
   const searchParams = useSearchParams();
+  
+  // Check if user is already logged in to prevent flash of login form
+  const { loading: authLoading, user: currentUser } = useAuthContext();
 
   // Track referral click on page load
   useEffect(() => {
@@ -118,6 +122,21 @@ function LoginPageContent() {
       }
     }, 8000); // 8 second timeout
   };
+
+  // Show loading spinner while checking auth state
+  // This prevents flash of login form when user is already logged in
+  if (authLoading) {
+    return (
+      <div className="w-full max-w-md">
+        <Card className="border-2 shadow-2xl backdrop-blur-sm bg-white/90 dark:bg-gray-900/90">
+          <CardContent className="p-8 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-sm text-muted-foreground">Checking login status...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-md">
