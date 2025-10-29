@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useFirebase } from "@/firebase";
 import { Loader2, Mail, Lock, Gift } from "lucide-react";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { useToast } from "@/hooks/use-toast";
 import { doc, getDoc, updateDoc, increment, collection, getDocs } from "firebase/firestore";
 
@@ -82,9 +82,13 @@ function LoginPageContent() {
     setIsLoading(true);
 
     try {
+      // 🔒 SET PERSISTENT LOGIN - User stays logged in FOREVER until they click logout
+      await setPersistence(auth, browserLocalPersistence);
+      console.log('✅ Auth persistence set to LOCAL (stays logged in forever)');
+      
       // Only allow existing users to log in - NO new account creation
       await signInWithEmailAndPassword(auth, email, password);
-      console.log('✅ Login successful');
+      console.log('✅ Login successful - User will stay logged in across sessions');
       // On successful login, the AuthContext's onAuthStateChanged will handle redirection.
     } catch (err: any) {
         console.error('❌ Login failed:', err);
