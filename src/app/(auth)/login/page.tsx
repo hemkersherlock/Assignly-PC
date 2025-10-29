@@ -13,9 +13,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import Logo from "@/components/shared/Logo";
 import { useFirebase } from "@/firebase";
-import { Loader2, Mail, Lock, Sparkles, Gift } from "lucide-react";
+import { Loader2, Mail, Lock, Gift } from "lucide-react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { useToast } from "@/hooks/use-toast";
 import { doc, getDoc, updateDoc, increment, collection, getDocs } from "firebase/firestore";
@@ -118,22 +117,6 @@ function LoginPageContent() {
 
   return (
     <div className="w-full max-w-md">
-      {/* Logo and Title - Outside Card */}
-      <div className="text-center mb-6 sm:mb-8">
-        <div className="flex justify-center items-center gap-3 mb-3">
-          <div className="relative">
-            <Logo className="h-12 w-12 sm:h-14 sm:w-14" />
-            <Sparkles className="absolute -top-1 -right-1 h-4 w-4 text-primary animate-pulse" />
-          </div>
-        </div>
-        <h1 className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
-          Assignly
-        </h1>
-        <p className="text-sm sm:text-base text-muted-foreground mt-2">
-          Your assignments, handwritten with care
-        </p>
-      </div>
-
       {/* Login Card */}
       <Card className="border-2 shadow-2xl backdrop-blur-sm bg-white/90 dark:bg-gray-900/90">
         <CardHeader className="space-y-2 pb-4">
