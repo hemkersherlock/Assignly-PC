@@ -198,12 +198,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (appUser && isAuthPage) {
       const targetDashboard = appUser.role === 'admin' ? '/admin' : '/dashboard';
       console.log(`✅ User is on auth page, redirecting to ${targetDashboard}`);
-      router.push(targetDashboard);
+      router.replace(targetDashboard); // Use replace to avoid adding to history
     }
     
     if (!appUser && !isAuthPage) {
        console.log(`❌ User is not authenticated and not on auth page, redirecting to /login`);
-      router.push('/login');
+      router.replace('/login'); // Use replace to avoid adding to history
     }
   }, [appUser, loading, pathname, router]);
 
@@ -211,15 +211,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await signOut(auth);
     setAppUser(null);
     setFirebaseUser(null);
-    router.push('/login');
+    router.replace('/login');
   };
 
   const value = { user: appUser, firebaseUser, loading, logout, setAppUser, needsOnboarding };
   
-  if (loading && pathname !== '/login') {
+  // Show loading spinner while checking auth state
+  // This prevents flash of login screen when user is already logged in
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
       </div>
     );
   }
