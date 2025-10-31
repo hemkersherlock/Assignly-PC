@@ -44,14 +44,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null | undefined>(undefined);
   const [appUser, setAppUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userDataLoaded, setUserDataLoaded] = useState(false); // Track if we've loaded REAL data from Firestore
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const pathname = usePathname();
 
-  // Check if user needs onboarding (only for completely new users with no profile data)
-  const needsOnboarding = appUser ? (
-    !appUser.whatsappNo || appUser.whatsappNo === '' ||
-    !appUser.section || appUser.section === ''
+  // Check if user needs onboarding (ONLY after loading REAL data from Firestore, not defaults)
+  // This prevents showing onboarding with default empty values before Firestore loads
+  const needsOnboarding = appUser && userDataLoaded && !loading ? (
+    (!appUser.whatsappNo || appUser.whatsappNo === '') &&
+    (!appUser.section || appUser.section === '')
   ) : false;
 
   // Debug logging for onboarding
@@ -122,7 +124,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const currentRole = adminDoc.exists() ? "admin" : "student";
             const createdAt = userData.createdAt as Timestamp;
 
-            // Update user with full data (non-blocking)
+            // Update user with full data from Firestore (REAL data, not defaults)
             setAppUser({
                 ...(userData as Omit<AppUser, 'id' | 'role' | 'createdAt' | 'lastOrderAt'>),
                 id: firebaseUser.uid,
@@ -134,10 +136,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 createdAt: createdAt?.toDate() || new Date(),
                 lastOrderAt: userData.lastOrderAt?.toDate() || null
             });
+            setUserDataLoaded(true); // Mark that we loaded REAL data
+          } else {
+            // User doesn't exist in Firestore - new account, will need onboarding
+            setUserDataLoaded(true);
           }
         } catch (err: any) {
           console.error('Error fetching user data:', err);
-          // Don't block - user already set with defaults
+          // If Firestore fails, mark as loaded so we don't show onboarding incorrectly
+          setUserDataLoaded(true);
         }
       } else {
         console.log('🚪 User logged out');
