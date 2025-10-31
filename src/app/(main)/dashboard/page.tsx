@@ -13,11 +13,8 @@ export default function DashboardPage() {
   const { user, loading } = useAuthContext();
   const router = useRouter();
 
-  // REMOVED: Redirect from dashboard page
-  // Middleware already handles redirect if no cookie
-  // If user doesn't exist after loading, show loading state (don't redirect again)
-
-  // Show loading while checking auth
+  // Show loading while AuthContext is loading user data
+  // Middleware already verified cookie, so user should exist
   if (loading) {
     return (
       <div className="w-full p-3 sm:p-0">
@@ -35,9 +32,9 @@ export default function DashboardPage() {
     );
   }
 
-  // If no user after loading, show loading state
-  // Don't redirect - middleware already checked cookie
-  if (!user && !loading) {
+  // If no user after loading completes, still show loading (user is loading from Firestore)
+  // Don't redirect - middleware already checked cookie, user should exist
+  if (!user) {
     return (
       <div className="w-full p-3 sm:p-0">
         <div className="grid gap-4 sm:gap-6 md:gap-8">

@@ -113,9 +113,12 @@ function LoginPageContent() {
       
       console.log('✅ Auth cookie set - server-side auth will work now');
       
-      // Redirect to dashboard (middleware will handle if already logged in)
+      // Wait for Firebase auth state to be ready (small delay to ensure persistence)
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Use router.push instead of window.location to avoid full reload loop
       const redirectTo = new URLSearchParams(window.location.search).get('redirect') || '/dashboard';
-      window.location.href = redirectTo;
+      router.push(redirectTo);
       
     } catch (err: any) {
         console.error('❌ Login failed:', err);
