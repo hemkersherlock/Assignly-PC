@@ -2,14 +2,14 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 /**
- * Middleware to handle authentication BEFORE page renders
- * This prevents flickering by checking auth on the server BEFORE React hydrates
+ * SIMPLE Middleware - Just checks cookie existence (NO slow Firestore calls)
+ * Fast redirect based on cookie presence, client handles actual auth verification
  */
-export async function middleware(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
-  // Get auth token from cookie
-  const authToken = request.cookies.get('auth_token')?.value;
+  // Just check if cookie exists (fast - no database calls)
+  const hasAuthCookie = request.cookies.has('auth_token');
   
   // Define protected routes
   const protectedPaths = ['/dashboard', '/orders', '/admin', '/profile'];
@@ -21,27 +21,21 @@ export async function middleware(request: NextRequest) {
   // Get root path
   const isRoot = pathname === '/';
   
-  // If accessing protected route without auth → redirect to login
-  if (isProtected && !authToken) {
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirect', pathname);
-    return NextResponse.redirect(loginUrl);
+  // If accessing protected route without cookie → redirect to login
+  if (isProtected && !hasAuthCookie) {
+    return NextResponse.redirect(new URL('/login', request.url));
   }
   
-  // If accessing login page with auth → redirect to dashboard
-  if (isAuthPage && authToken) {
+  // If accessing login page with cookie → redirect to dashboard
+  if (isAuthPage && hasAuthCookie) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
   
-  // If accessing root → redirect based on auth
+  // If accessing root → redirect based on cookie
   if (isRoot) {
-    if (authToken) {
-      // Has auth → redirect to dashboard
-      return NextResponse.redirect(new URL('/dashboard', request.url));
-    } else {
-      // No auth → redirect to login
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
+    return NextResponse.redirect(
+      new URL(hasAuthCookie ? '/dashboard' : '/login', request.url)
+    );
   }
   
   // Allow request to continue
