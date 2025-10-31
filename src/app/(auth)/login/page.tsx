@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -31,6 +31,7 @@ function LoginPageContent() {
   
   const { auth, firestore } = useFirebase();
   const { toast } = useToast();
+  const router = useRouter();
   const searchParams = useSearchParams();
   
   // Check if user is already logged in to prevent flash of login form
