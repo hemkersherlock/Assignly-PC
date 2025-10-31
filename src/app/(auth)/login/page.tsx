@@ -91,9 +91,32 @@ function LoginPageContent() {
       console.log('✅ Auth persistence set to LOCAL (stays logged in forever)');
       
       // Only allow existing users to log in - NO new account creation
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       console.log('✅ Login successful - User will stay logged in across sessions');
-      // On successful login, the AuthContext's onAuthStateChanged will handle redirection.
+      
+      // Get Firebase ID token
+      const idToken = await userCredential.user.getIdToken();
+      
+      // Set auth cookie for server-side middleware
+      // This allows middleware to check auth BEFORE page renders (eliminates flicker)
+      const response = await fetch('/api/set-auth-cookie', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ idToken }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to set auth cookie');
+      }
+      
+      console.log('✅ Auth cookie set - server-side auth will work now');
+      
+      // Redirect to dashboard (middleware will handle if already logged in)
+      const redirectTo = new URLSearchParams(window.location.search).get('redirect') || '/dashboard';
+      window.location.href = redirectTo;
+      
     } catch (err: any) {
         console.error('❌ Login failed:', err);
         

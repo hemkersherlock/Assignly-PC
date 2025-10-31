@@ -64,9 +64,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       console.log('🔐 Auth state changed:', user?.uid || 'null');
       setFirebaseUser(user);
+      
+      // Sync cookie with Firebase auth state
+      if (user) {
+        try {
+          // Get fresh token
+          const idToken = await user.getIdToken();
+          
+          // Set cookie for server-side middleware
+          await fetch('/api/set-auth-cookie', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ idToken }),
+          });
+          
+          console.log('✅ Auth cookie synced with Firebase auth');
+        } catch (error) {
+          console.error('Error syncing auth cookie:', error);
+        }
+      } else {
+        // User logged out - clear cookie
+        await fetch('/api/clear-auth-cookie', {
+          method: 'POST',
+        });
+        console.log('✅ Auth cookie cleared');
+      }
     });
     return () => unsubscribe();
   }, [auth]);
@@ -213,9 +240,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [appUser, loading, pathname, router]);
 
   const logout = async () => {
+    // Clear Firebase auth
     await signOut(auth);
+    
+    // Clear auth cookie for server-side middleware
+    await fetch('/api/clear-auth-cookie', {
+      method: 'POST',
+    });
+    
+    // Clear local state
     setAppUser(null);
     setFirebaseUser(null);
+    
+    // Redirect to login
     router.replace('/login');
   };
 
