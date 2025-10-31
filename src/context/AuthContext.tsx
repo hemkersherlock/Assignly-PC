@@ -156,30 +156,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     manageUser();
   }, [firebaseUser, firestore, auth]);
   
-  useEffect(() => {
-    console.log('🔍 Redirect check:', { loading, pathname, appUser: !!appUser, role: appUser?.role });
-    
-    // CRITICAL: Don't do ANY redirects while auth is still loading
-    // This prevents the flash: loading → redirect to /login → redirect back to /dashboard
-    if (loading || !pathname) {
-      console.log('⏳ Still loading or no pathname, skipping redirect');
-      return;
-    }
-
-    const isAuthPage = pathname === '/login';
-
-    // Only redirect if auth check is COMPLETE
-    if (appUser && isAuthPage) {
-      const targetDashboard = appUser.role === 'admin' ? '/admin' : '/dashboard';
-      console.log(`✅ User IS logged in but on login page, redirecting to ${targetDashboard}`);
-      router.replace(targetDashboard);
-    }
-    
-    if (!appUser && !isAuthPage) {
-       console.log(`❌ User NOT logged in and not on login page, redirecting to /login`);
-      router.replace('/login');
-    }
-  }, [appUser, loading, pathname, router]);
+  // REMOVED: Client-side redirects from AuthContext
+  // Let middleware and individual pages handle redirects
+  // AuthContext should only manage state, not routing
 
   const logout = async () => {
     // Clear Firebase auth
