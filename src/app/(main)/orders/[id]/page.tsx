@@ -125,20 +125,22 @@ export default function StudentOrderDetailPage({ params }: { params: Promise<{ i
   }
 
   return (
-    <div className="w-full p-3 sm:p-0 max-w-4xl space-y-3 sm:space-y-4">
-      <Button asChild variant="outline" size="sm" className="mb-2 sm:mb-4">
-        <Link href="/orders">
-          <ArrowLeft className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
-          <span className="text-xs sm:text-sm">Back to Orders</span>
+    <div className="w-full p-4 sm:p-6 max-w-4xl mx-auto space-y-4">
+      <Button asChild variant="ghost" size="sm" className="mb-2 hover:bg-muted/50">
+        <Link href="/orders" className="text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          <span className="text-sm">Back to Orders</span>
         </Link>
       </Button>
       
-      <Card className="shadow-subtle border-0 sm:border">
-        <CardHeader className="pb-2 sm:pb-3">
-          <div className="flex items-start justify-between gap-3">
+      <Card className="shadow-lg border bg-gradient-to-br from-background to-muted/20 overflow-hidden">
+        <CardHeader className="pb-4 bg-gradient-to-r from-muted/40 to-transparent border-b">
+          <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
-                  <CardTitle className="text-lg sm:text-xl line-clamp-2 mb-1">{order.assignmentTitle}</CardTitle>
-                  <CardDescription className="text-xs text-muted-foreground">
+                  <CardTitle className="text-2xl sm:text-3xl font-bold line-clamp-2 mb-2 bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text">
+                    {order.assignmentTitle}
+                  </CardTitle>
+                  <CardDescription className="text-sm font-mono bg-muted/50 px-2 py-1 rounded-md inline-block">
                     {order.id}
                   </CardDescription>
               </div>
@@ -147,33 +149,42 @@ export default function StudentOrderDetailPage({ params }: { params: Promise<{ i
               </div>
           </div>
         </CardHeader>
-      <CardContent className="space-y-3 sm:space-y-4 pt-0">
-        <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2">
-            <div className="flex items-center gap-2.5">
-                <Hash className="h-4 w-4 text-muted-foreground shrink-0" />
-                <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground">Pages</p>
-                    <p className="font-medium text-sm">{order.pageCount}</p>
+      <CardContent className="p-6 space-y-6">
+        <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2">
+            <div className="group flex items-center gap-4 p-4 rounded-lg bg-gradient-to-br from-muted/50 to-muted/30 border border-border/50 hover:border-border hover:shadow-sm transition-all duration-200">
+                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                  <Hash className="h-5 w-5 text-primary" />
+                </div>
+                <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Pages</p>
+                    <p className="text-lg font-bold text-foreground">{order.pageCount}</p>
                 </div>
             </div>
-            <div className="flex items-center gap-2.5">
-                <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-                <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground">Submitted</p>
-                    <p className="font-medium text-sm">{order.createdAt ? format(order.createdAt instanceof Date ? order.createdAt : order.createdAt.toDate(), "MMM d, yyyy") : 'Unknown'}</p>
+            <div className="group flex items-center gap-4 p-4 rounded-lg bg-gradient-to-br from-muted/50 to-muted/30 border border-border/50 hover:border-border hover:shadow-sm transition-all duration-200">
+                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/10 group-hover:bg-blue-500/20 transition-colors">
+                  <Calendar className="h-5 w-5 text-blue-500" />
+                </div>
+                <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Submitted</p>
+                    <p className="text-base font-semibold text-foreground">{order.createdAt ? format(order.createdAt instanceof Date ? order.createdAt : order.createdAt.toDate(), "MMM d, yyyy") : 'Unknown'}</p>
                 </div>
             </div>
             {order.originalFiles && order.originalFiles.length > 0 && (
-                <div className="flex items-start gap-2.5 sm:col-span-2">
-                    <FileText className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                <div className="group flex items-start gap-4 p-4 rounded-lg bg-gradient-to-br from-muted/50 to-muted/30 border border-border/50 hover:border-border hover:shadow-sm transition-all duration-200 sm:col-span-2">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/10 group-hover:bg-purple-500/20 transition-colors mt-1">
+                      <FileText className="h-5 w-5 text-purple-500" />
+                    </div>
                     <div className="flex-1 min-w-0">
-                        <p className="text-xs text-muted-foreground mb-1">File</p>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">File</p>
                         <TooltipProvider>
                             {order.originalFiles.map((file, idx) => {
                                 const truncatedName = truncateFileName(file.name, isMobile ? 25 : 40);
                                 const isTruncated = file.name !== truncatedName;
                                 const FileDisplay = (
-                                    <span className="text-sm font-medium truncate block">{truncatedName}</span>
+                                    <div className="flex items-center gap-2 px-3 py-2 bg-background/80 rounded-md border border-border/50">
+                                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                                      <span className="text-sm font-medium truncate block">{truncatedName}</span>
+                                    </div>
                                 );
                                 
                                 if (isTruncated) {
@@ -188,36 +199,42 @@ export default function StudentOrderDetailPage({ params }: { params: Promise<{ i
                                         </Tooltip>
                                     );
                                 }
-                                return <span key={idx}>{FileDisplay}</span>;
+                                return <div key={idx}>{FileDisplay}</div>;
                             })}
                         </TooltipProvider>
                     </div>
                 </div>
             )}
             {order.status !== 'pending' && order.startedAt && (
-                <div className="flex items-center gap-2.5">
-                    <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground">Started</p>
-                        <p className="font-medium text-sm">{order.startedAt ? format(order.startedAt instanceof Date ? order.startedAt : order.startedAt.toDate(), "MMM d, yyyy") : 'Unknown'}</p>
+                <div className="group flex items-center gap-4 p-4 rounded-lg bg-gradient-to-br from-muted/50 to-muted/30 border border-border/50 hover:border-border hover:shadow-sm transition-all duration-200">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-amber-500/10 group-hover:bg-amber-500/20 transition-colors">
+                      <Clock className="h-5 w-5 text-amber-500" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Started</p>
+                        <p className="text-base font-semibold text-foreground">{order.startedAt ? format(order.startedAt instanceof Date ? order.startedAt : order.startedAt.toDate(), "MMM d, yyyy") : 'Unknown'}</p>
                     </div>
                 </div>
             )}
             {order.status === 'completed' && order.completedAt && (
                 <>
-                <div className="flex items-center gap-2.5">
-                    <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
-                    <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground">Completed</p>
-                        <p className="font-medium text-sm">{order.completedAt ? format(order.completedAt instanceof Date ? order.completedAt : order.completedAt.toDate(), "MMM d, yyyy") : 'Unknown'}</p>
+                <div className="group flex items-center gap-4 p-4 rounded-lg bg-gradient-to-br from-green-500/10 to-green-500/5 border border-green-500/20 hover:border-green-500/30 hover:shadow-sm transition-all duration-200">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-green-500/20 group-hover:bg-green-500/30 transition-colors">
+                      <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Completed</p>
+                        <p className="text-base font-semibold text-foreground">{order.completedAt ? format(order.completedAt instanceof Date ? order.completedAt : order.completedAt.toDate(), "MMM d, yyyy") : 'Unknown'}</p>
                     </div>
                 </div>
                 {order.turnaroundTimeHours && (
-                    <div className="flex items-center gap-2.5">
-                        <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Turnaround</p>
-                            <p className="font-medium text-sm">~{order.turnaroundTimeHours}h</p>
+                    <div className="group flex items-center gap-4 p-4 rounded-lg bg-gradient-to-br from-muted/50 to-muted/30 border border-border/50 hover:border-border hover:shadow-sm transition-all duration-200">
+                        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-colors">
+                          <Clock className="h-5 w-5 text-indigo-500" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Turnaround</p>
+                            <p className="text-base font-semibold text-foreground">~{order.turnaroundTimeHours}h</p>
                         </div>
                     </div>
                 )}
@@ -225,15 +242,14 @@ export default function StudentOrderDetailPage({ params }: { params: Promise<{ i
             )}
         </div>
         
-        
         {order.status === 'completed' && (
-          <div className="border-t pt-3 sm:pt-4 flex flex-col sm:flex-row gap-2 sm:gap-3">
-            <Button className="w-full sm:w-auto text-xs sm:text-sm" size="sm">
-              <Download className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+          <div className="border-t pt-6 flex flex-col sm:flex-row gap-3">
+            <Button className="w-full sm:w-auto bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-md hover:shadow-lg transition-all duration-200" size="default">
+              <Download className="mr-2 h-4 w-4" />
               Download
             </Button>
-            <Button variant="secondary" className="w-full sm:w-auto text-xs sm:text-sm" size="sm">
-              <Save className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+            <Button variant="secondary" className="w-full sm:w-auto border-2 hover:bg-muted/80 transition-all duration-200" size="default">
+              <Save className="mr-2 h-4 w-4" />
               Save to Drive
             </Button>
           </div>

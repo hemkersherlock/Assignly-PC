@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
       isActive: true,
       createdAt: new Date(),
       lastOrderAt: null,
+      lastCreditRollover: new Date(), // Track credit rollover date for monthly rollover
       referralCode: referralCode || null, // Track where they came from
     };
 

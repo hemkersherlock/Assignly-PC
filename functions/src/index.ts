@@ -470,3 +470,239 @@ export const detectFraud = functions.pubsub
     }
   });
 
+// ============================================================================
+// 💰 MONTHLY CREDIT ROLLOVER - Credits Preserve Based on Enrollment Date
+// ============================================================================
+
+/**
+ * Monthly credit rollover function
+ * Runs daily to check enrollment anniversaries
+ * Preserves existing credits when it's been a month since enrollment/last rollover
+ * Credits roll over on the enrollment date anniversary (e.g., enrolled Oct 29, rolls over Nov 29+)
+ * NO automatic credit addition - admin adds credits manually based on payment status
+ */
+export const monthlyCreditRollover = functions.pubsub
+  .schedule('every 24 hours') // Run daily to check enrollment anniversaries
+  .timeZone('UTC')
+  .onRun(async (context) => {
+    console.log('Running monthly credit rollover check...');
+    
+    try {
+      const now = new Date();
+      const usersSnapshot = await db.collection('users').where('role', '==', 'student').get();
+      let processedCount = 0;
+      
+      const BATCH_SIZE = 500; // Firestore batch limit
+      let batch = db.batch();
+      let batchCount = 0;
+      
+      for (const userDoc of usersSnapshot.docs) {
+        const userData = userDoc.data();
+        
+        // Only process active students
+        if (!userData.isActive) {
+          continue;
+        }
+        
+        const currentCredits = userData.creditsRemaining || 0;
+        const enrollmentDate = userData.createdAt;
+        const lastRollover = userData.lastCreditRollover;
+        
+        // Determine the base date for rollover calculation
+        // If lastRollover exists, use that; otherwise use enrollment date
+        let baseDate: Date;
+        if (lastRollover) {
+          baseDate = lastRollover.toDate ? lastRollover.toDate() : new Date(lastRollover);
+        } else if (enrollmentDate) {
+          baseDate = enrollmentDate.toDate ? enrollmentDate.toDate() : new Date(enrollmentDate);
+        } else {
+          // No enrollment date, skip this user
+          continue;
+        }
+        
+        // Calculate if a month has passed (based on calendar month)
+        const baseYear = baseDate.getFullYear();
+        const baseMonth = baseDate.getMonth();
+        const baseDay = baseDate.getDate();
+        
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+        const currentDay = now.getDate();
+        
+        // Check if we're past the anniversary date in the current month
+        let shouldRollover = false;
+        
+        if (currentYear > baseYear || 
+            (currentYear === baseYear && currentMonth > baseMonth) ||
+            (currentYear === baseYear && currentMonth === baseMonth && currentDay >= baseDay)) {
+          // Check if we haven't already rolled over for this month
+          if (lastRollover) {
+            const lastRolloverDate = lastRollover.toDate ? lastRollover.toDate() : new Date(lastRollover);
+            const lastRolloverMonth = lastRolloverDate.getMonth();
+            const lastRolloverYear = lastRolloverDate.getFullYear();
+            
+            // Rollover if last rollover was in a different month/year
+            if (currentYear > lastRolloverYear || 
+                (currentYear === lastRolloverYear && currentMonth > lastRolloverMonth)) {
+              shouldRollover = true;
+            }
+          } else {
+            // First rollover based on enrollment date
+            if (currentYear > baseYear || 
+                (currentYear === baseYear && currentMonth > baseMonth) ||
+                (currentYear === baseYear && currentMonth === baseMonth && currentDay >= baseDay)) {
+              shouldRollover = true;
+            }
+          }
+        }
+        
+        if (shouldRollover) {
+          // Just preserve credits and update rollover date
+          // Credits are preserved, no automatic addition
+          const userRef = db.collection('users').doc(userDoc.id);
+          batch.update(userRef, {
+            // Credits remain the same - just preserve them
+            lastCreditRollover: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          
+          batchCount++;
+          
+          // Commit batch if we hit the limit
+          if (batchCount >= BATCH_SIZE) {
+            await batch.commit();
+            processedCount += batchCount;
+            batchCount = 0;
+            batch = db.batch(); // Create new batch
+          }
+        }
+      }
+      
+      // Commit remaining updates
+      if (batchCount > 0) {
+        await batch.commit();
+        processedCount += batchCount;
+      }
+      
+      // Log rollover activity
+      if (processedCount > 0) {
+        await db.collection('credit_rollover_logs').add({
+          date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          usersProcessed: processedCount,
+          note: 'Credits preserved based on enrollment anniversary - no automatic credit addition',
+        });
+      }
+      
+      console.log(`✅ Monthly credit rollover check completed: ${processedCount} users rolled over (credits preserved)`);
+      
+      return {
+        success: true,
+        usersProcessed: processedCount,
+        message: 'Credits preserved based on enrollment anniversary',
+      };
+      
+    } catch (error) {
+      console.error('❌ Error in monthly credit rollover:', error);
+      
+      // Log error for monitoring
+      await db.collection('error_logs').add({
+        function: 'monthlyCreditRollover',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      
+      throw error;
+    }
+  });
+
+/**
+ * Manual trigger for credit rollover check (for testing)
+ * This just preserves credits based on enrollment date, doesn't add new credits
+ */
+export const manualCreditRollover = functions.https.onCall(async (data, context) => {
+  // Check if user is admin (optional security check)
+  if (!context.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated');
+  }
+  
+  // Verify admin role
+  const adminRoleDoc = await db.collection('roles_admin').doc(context.auth.uid).get();
+  if (!adminRoleDoc.exists) {
+    throw new HttpsError('permission-denied', 'Only admins can trigger manual rollover');
+  }
+  
+  try {
+    const now = new Date();
+    const usersSnapshot = await db.collection('users').where('role', '==', 'student').get();
+    let processedCount = 0;
+    
+    for (const userDoc of usersSnapshot.docs) {
+      const userData = userDoc.data();
+      
+      if (!userData.isActive) {
+        continue;
+      }
+      
+      const enrollmentDate = userData.createdAt;
+      const lastRollover = userData.lastCreditRollover;
+      
+      // Determine base date
+      let baseDate: Date;
+      if (lastRollover) {
+        baseDate = lastRollover.toDate ? lastRollover.toDate() : new Date(lastRollover);
+      } else if (enrollmentDate) {
+        baseDate = enrollmentDate.toDate ? enrollmentDate.toDate() : new Date(enrollmentDate);
+      } else {
+        continue;
+      }
+      
+      // Check if month has passed
+      const baseYear = baseDate.getFullYear();
+      const baseMonth = baseDate.getMonth();
+      const baseDay = baseDate.getDate();
+      
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth();
+      const currentDay = now.getDate();
+      
+      let shouldRollover = false;
+      
+      if (currentYear > baseYear || 
+          (currentYear === baseYear && currentMonth > baseMonth) ||
+          (currentYear === baseYear && currentMonth === baseMonth && currentDay >= baseDay)) {
+        if (lastRollover) {
+          const lastRolloverDate = lastRollover.toDate ? lastRollover.toDate() : new Date(lastRollover);
+          const lastRolloverMonth = lastRolloverDate.getMonth();
+          const lastRolloverYear = lastRolloverDate.getFullYear();
+          
+          if (currentYear > lastRolloverYear || 
+              (currentYear === lastRolloverYear && currentMonth > lastRolloverMonth)) {
+            shouldRollover = true;
+          }
+        } else {
+          shouldRollover = true;
+        }
+      }
+      
+      if (shouldRollover) {
+        // Just update rollover date, preserve credits
+        await db.collection('users').doc(userDoc.id).update({
+          lastCreditRollover: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        
+        processedCount++;
+      }
+    }
+    
+    return {
+      success: true,
+      usersProcessed: processedCount,
+      message: 'Credits preserved based on enrollment anniversary - no automatic credit addition',
+    };
+    
+  } catch (error) {
+    console.error('Error in manual credit rollover:', error);
+    throw new HttpsError('internal', 'Failed to rollover credits');
+  }
+});
+

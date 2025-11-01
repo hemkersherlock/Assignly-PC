@@ -78,9 +78,13 @@ export default function AdminCreditsPage() {
             
             students.forEach(student => {
                 const userRef = doc(firestore, 'users', student.id);
+                const currentCredits = student.creditsRemaining || 0;
+                // Add 40 credits to existing credits (credits accumulate)
+                const newCredits = currentCredits + 40;
                 batch.update(userRef, {
-                    creditsRemaining: 40,
-                    lastReplenishedAt: new Date()
+                    creditsRemaining: newCredits,
+                    lastReplenishedAt: new Date(),
+                    lastCreditRollover: new Date() // Update rollover date
                 });
             });
             
@@ -88,7 +92,7 @@ export default function AdminCreditsPage() {
             
             toast({ 
                 title: 'Success!', 
-                description: `All ${students.length} student credits have been replenished to 40 credits.`
+                description: `Added 40 credits to all ${students.length} students. Credits accumulate and never expire.`
             });
         } catch (error: any) {
             console.error('Failed to replenish credits:', error);
@@ -186,7 +190,7 @@ export default function AdminCreditsPage() {
                 <Card className="shadow-subtle">
                     <CardHeader>
                         <CardTitle>Bulk Replenishment</CardTitle>
-                        <CardDescription>Reset all student credits to the default amount.</CardDescription>
+                        <CardDescription>Add 40 credits to all students. Credits accumulate and never expire.</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="text-center py-8">
@@ -215,25 +219,25 @@ export default function AdminCreditsPage() {
     <div className="grid gap-8 md:grid-cols-2">
       <Card className="shadow-subtle">
         <CardHeader>
-          <CardTitle>Bulk Replenishment</CardTitle>
-          <CardDescription>Reset all student credits to the default amount.</CardDescription>
+          <CardTitle>Bulk Credit Addition</CardTitle>
+          <CardDescription>Add 40 credits to all students. Credits accumulate and never expire.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            This will reset credits for {students.length} students to 40 credits each.
+            This will add 40 credits to all {students.length} students. Existing credits are preserved and accumulate.
           </p>
           <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button className="w-full" disabled={isLoading || students.length === 0}>
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                    Replenish All Credits to 40
+                    Add 40 Credits to All Students
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                   <AlertDialogHeader>
                       <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                       <AlertDialogDescription>
-                          This action will reset the credits for ALL {students.length} students to 40 credits. This cannot be undone.
+                          This action will add 40 credits to ALL {students.length} students. Existing credits will be preserved and accumulated. This cannot be undone.
                       </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

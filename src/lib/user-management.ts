@@ -33,6 +33,7 @@ export async function initializeUser(userId: string, email: string, name?: strin
       totalPages: 0,
       createdAt: new Date(),
       lastOrderAt: null,
+      lastCreditRollover: new Date(), // Track credit rollover date for monthly rollover
     };
     
     await setDoc(userRef, userData);
