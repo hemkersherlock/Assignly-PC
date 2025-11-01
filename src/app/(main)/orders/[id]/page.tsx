@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { format } from "date-fns";
-import { Download, Save, Clock, Hash, Calendar, CheckCircle, FileText, ArrowLeft } from "lucide-react";
+import { Save, Clock, Hash, Calendar, CheckCircle, FileText, ArrowLeft, Download } from "lucide-react";
 import { useFirebase, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/context/AuthContext";
 import { useDoc } from "@/firebase/firestore/use-doc";
@@ -134,157 +134,107 @@ export default function StudentOrderDetailPage({ params }: { params: Promise<{ i
       </Button>
       
       <Card className="shadow-subtle border-0 sm:border">
-        <CardHeader className="pb-3 sm:pb-6">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
+        <CardHeader className="pb-2 sm:pb-3">
+          <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
-                  <CardTitle className="text-base sm:text-lg md:text-xl line-clamp-2">{order.assignmentTitle}</CardTitle>
-                  <CardDescription className="text-xs sm:text-sm mt-1">
-                    Order ID: <span className="font-mono text-xs">{order.id}</span>
+                  <CardTitle className="text-lg sm:text-xl line-clamp-2 mb-1">{order.assignmentTitle}</CardTitle>
+                  <CardDescription className="text-xs text-muted-foreground">
+                    {order.id}
                   </CardDescription>
               </div>
-              <StatusBadge status={order.status} />
+              <div className="shrink-0">
+                <StatusBadge status={order.status} />
+              </div>
           </div>
         </CardHeader>
-      <CardContent className="space-y-4 sm:space-y-6">
-        <div className="grid gap-4 sm:gap-6 md:grid-cols-2">
-            <div className="flex items-start gap-3">
-                <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-1 shrink-0" />
-                <div className="flex-1 min-w-0">
-                    <p className="text-xs sm:text-sm text-muted-foreground mb-1 sm:mb-2">Uploaded Files</p>
-                    <div className="font-semibold flex flex-col gap-1.5 sm:gap-2 mt-1">
-                        {order.originalFiles && order.originalFiles.length > 0 ? (
-                            <TooltipProvider>
-                                {order.originalFiles.map((file, idx) => {
-                                    const truncatedName = truncateFileName(file.name, isMobile ? 25 : 40);
-                                    const isTruncated = file.name !== truncatedName;
-                                    const FileDisplay = (
-                                        <div className="flex items-center gap-2 p-1.5 sm:p-2 bg-muted/50 rounded-md min-w-0">
-                                            <FileText className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
-                                            <span className="text-xs sm:text-sm truncate">{truncatedName}</span>
-                                        </div>
+      <CardContent className="space-y-3 sm:space-y-4 pt-0">
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2">
+            <div className="flex items-center gap-2.5">
+                <Hash className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Pages</p>
+                    <p className="font-medium text-sm">{order.pageCount}</p>
+                </div>
+            </div>
+            <div className="flex items-center gap-2.5">
+                <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Submitted</p>
+                    <p className="font-medium text-sm">{order.createdAt ? format(order.createdAt instanceof Date ? order.createdAt : order.createdAt.toDate(), "MMM d, yyyy") : 'Unknown'}</p>
+                </div>
+            </div>
+            {order.originalFiles && order.originalFiles.length > 0 && (
+                <div className="flex items-start gap-2.5 sm:col-span-2">
+                    <FileText className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                        <p className="text-xs text-muted-foreground mb-1">File</p>
+                        <TooltipProvider>
+                            {order.originalFiles.map((file, idx) => {
+                                const truncatedName = truncateFileName(file.name, isMobile ? 25 : 40);
+                                const isTruncated = file.name !== truncatedName;
+                                const FileDisplay = (
+                                    <span className="text-sm font-medium truncate block">{truncatedName}</span>
+                                );
+                                
+                                if (isTruncated) {
+                                    return (
+                                        <Tooltip key={idx}>
+                                            <TooltipTrigger asChild>
+                                                {FileDisplay}
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="max-w-xs break-all">
+                                                <p>{file.name}</p>
+                                            </TooltipContent>
+                                        </Tooltip>
                                     );
-                                    
-                                    if (isTruncated) {
-                                        return (
-                                            <Tooltip key={idx}>
-                                                <TooltipTrigger asChild>
-                                                    {FileDisplay}
-                                                </TooltipTrigger>
-                                                <TooltipContent side="top" className="max-w-xs break-all">
-                                                    <p>{file.name}</p>
-                                                </TooltipContent>
-                                            </Tooltip>
-                                        );
-                                    }
-                                    return <div key={idx}>{FileDisplay}</div>;
-                                })}
-                            </TooltipProvider>
-                        ) : (
-                            <span className="text-xs text-muted-foreground">No files uploaded</span>
-                        )}
+                                }
+                                return <span key={idx}>{FileDisplay}</span>;
+                            })}
+                        </TooltipProvider>
                     </div>
                 </div>
-            </div>
-            <div className="flex items-start gap-3">
-                <Hash className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-1 shrink-0" />
-                <div className="flex-1 min-w-0">
-                    <p className="text-xs sm:text-sm text-muted-foreground mb-1 sm:mb-2">Page Count</p>
-                    <p className="font-semibold text-sm sm:text-base">{order.pageCount}</p>
-                </div>
-            </div>
-            <div className="flex items-start gap-3">
-                <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-1 shrink-0" />
-                <div className="flex-1 min-w-0">
-                    <p className="text-xs sm:text-sm text-muted-foreground mb-1 sm:mb-2">Submitted</p>
-                    <p className="font-semibold text-xs sm:text-sm break-words">{order.createdAt ? format(order.createdAt instanceof Date ? order.createdAt : order.createdAt.toDate(), "PPP p") : 'Unknown'}</p>
-                </div>
-            </div>
+            )}
             {order.status !== 'pending' && order.startedAt && (
-                <div className="flex items-start gap-3 sm:gap-4">
-                    <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-1 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm text-muted-foreground mb-1 sm:mb-2">Processing Started</p>
-                        <p className="font-semibold text-xs sm:text-sm break-words">{order.startedAt ? format(order.startedAt instanceof Date ? order.startedAt : order.startedAt.toDate(), "PPP p") : 'Unknown'}</p>
+                <div className="flex items-center gap-2.5">
+                    <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">Started</p>
+                        <p className="font-medium text-sm">{order.startedAt ? format(order.startedAt instanceof Date ? order.startedAt : order.startedAt.toDate(), "MMM d, yyyy") : 'Unknown'}</p>
                     </div>
                 </div>
             )}
             {order.status === 'completed' && order.completedAt && (
                 <>
-                <div className="flex items-start gap-3 sm:gap-4">
-                    <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-500 mt-1 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm text-muted-foreground mb-1 sm:mb-2">Completed</p>
-                        <p className="font-semibold text-xs sm:text-sm break-words">{order.completedAt ? format(order.completedAt instanceof Date ? order.completedAt : order.completedAt.toDate(), "PPP p") : 'Unknown'}</p>
+                <div className="flex items-center gap-2.5">
+                    <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                    <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">Completed</p>
+                        <p className="font-medium text-sm">{order.completedAt ? format(order.completedAt instanceof Date ? order.completedAt : order.completedAt.toDate(), "MMM d, yyyy") : 'Unknown'}</p>
                     </div>
                 </div>
-                 <div className="flex items-start gap-3 sm:gap-4">
-                    <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-1 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm text-muted-foreground mb-1 sm:mb-2">Turnaround Time</p>
-                        <p className="font-semibold text-xs sm:text-sm">~{order.turnaroundTimeHours} hours</p>
+                {order.turnaroundTimeHours && (
+                    <div className="flex items-center gap-2.5">
+                        <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <div className="min-w-0">
+                            <p className="text-xs text-muted-foreground">Turnaround</p>
+                            <p className="font-medium text-sm">~{order.turnaroundTimeHours}h</p>
+                        </div>
                     </div>
-                </div>
+                )}
                 </>
             )}
         </div>
         
-        {order.originalFiles && order.originalFiles.length > 0 && (
-          <div className="border-t pt-4 sm:pt-6">
-            <div className="flex items-start gap-3">
-              <Download className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground mt-1 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs sm:text-sm text-muted-foreground mb-2 sm:mb-3">Download Files</p>
-                <div className="space-y-2">
-                  <TooltipProvider>
-                    {order.originalFiles.map((file, idx) => {
-                      const truncatedName = truncateFileName(file.name, isMobile ? 20 : 35);
-                      const isTruncated = file.name !== truncatedName;
-                      
-                      const button = (
-                        <Button 
-                          key={idx} 
-                          asChild 
-                          variant="outline" 
-                          size="sm" 
-                          className="w-full sm:w-auto text-xs sm:text-sm justify-start"
-                        >
-                          <a href={file.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 min-w-0">
-                            <Download className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" />
-                            <span className="truncate block min-w-0">{truncatedName}</span>
-                          </a>
-                        </Button>
-                      );
-                      
-                      if (isTruncated) {
-                        return (
-                          <Tooltip key={idx}>
-                            <TooltipTrigger asChild>
-                              <div className="w-full sm:w-auto">{button}</div>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-xs break-all">
-                              <p>{file.name}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        );
-                      }
-                      return <div key={idx} className="w-full sm:w-auto">{button}</div>;
-                    })}
-                  </TooltipProvider>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
         
         {order.status === 'completed' && (
-          <div className="border-t pt-4 sm:pt-6 flex flex-col sm:flex-row gap-3 sm:gap-4">
-            <Button className="w-full sm:w-auto text-xs sm:text-sm">
+          <div className="border-t pt-3 sm:pt-4 flex flex-col sm:flex-row gap-2 sm:gap-3">
+            <Button className="w-full sm:w-auto text-xs sm:text-sm" size="sm">
               <Download className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
-              Download Completed File
+              Download
             </Button>
-            <Button variant="secondary" className="w-full sm:w-auto text-xs sm:text-sm">
+            <Button variant="secondary" className="w-full sm:w-auto text-xs sm:text-sm" size="sm">
               <Save className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
-              Save to Google Drive
+              Save to Drive
             </Button>
           </div>
         )}

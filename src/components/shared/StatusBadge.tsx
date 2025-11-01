@@ -14,7 +14,7 @@ const statusStyles: Record<Status, string> = {
 const statusText: Record<Status, string> = {
     pending: "⏳ Pending",
     writing: "✍️ Writing",
-    "on the way": "🚀 On the Way",
+    "on the way": "🚀 On Way",
     delivered: "✅ Delivered"
 }
 
@@ -22,7 +22,7 @@ export function StatusBadge({ status }: { status: Status }) {
   return (
     <Badge
       className={cn(
-        "border-transparent capitalize",
+        "border-transparent capitalize whitespace-nowrap shrink-0",
         statusStyles[status]
       )}
     >
