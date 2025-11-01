@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useFirebase } from "@/firebase";
-import { collection, addDoc, getDocs, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import {
   Card,
   CardContent,
@@ -49,7 +49,7 @@ interface ReferralLink {
 }
 
 export default function ReferralsPage() {
-  const { firestore } = useFirebase();
+  const { firestore, auth } = useFirebase();
   const { toast } = useToast();
   
   const [links, setLinks] = useState<ReferralLink[]>([]);
@@ -98,7 +98,7 @@ export default function ReferralsPage() {
     return code;
   };
 
-  // Create new referral link
+  // Create new referral link - 🔒 SECURITY: Uses server-side API
   const handleCreate = async () => {
     if (!formData.name.trim()) {
       toast({
@@ -120,49 +120,86 @@ export default function ReferralsPage() {
 
     setIsCreating(true);
     try {
-      const code = generateCode();
+      const idToken = await auth.currentUser?.getIdToken();
       
-      const newLink = {
-        code,
-        name: formData.name,
-        credits: formData.credits,
-        clicks: 0,
-        signups: 0,
-        orders: 0,
-        active: true,
-        createdAt: serverTimestamp(),
-        createdBy: "admin", // TODO: Replace with actual admin ID
-      };
+      if (!idToken) {
+        throw new Error('Authentication failed. Please log in again.');
+      }
 
-      const docRef = await addDoc(collection(firestore, "referral_links"), newLink);
+      const response = await fetch('/api/referrals/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          name: formData.name.trim(),
+          credits: formData.credits,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to create referral link');
+      }
+
+      // Refresh links list
+      const linksSnapshot = await getDocs(collection(firestore, "referral_links"));
+      const linksData = linksSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as ReferralLink[];
       
-      setLinks([{ id: docRef.id, ...newLink, createdAt: new Date() }, ...links]);
+      setLinks(linksData.sort((a, b) => b.createdAt?.toDate?.() - a.createdAt?.toDate?.()));
       
       toast({
         title: "Referral link created! 🎉",
-        description: `Code: ${code} - ${formData.credits} credits`,
+        description: `Code: ${data.link.code} - ${data.link.credits} credits`,
       });
 
       setIsCreateOpen(false);
       setFormData({ name: "", credits: 10 });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating link:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to create referral link",
+        description: error.message || "Failed to create referral link",
       });
     } finally {
       setIsCreating(false);
     }
   };
 
-  // Toggle active status
+  // Toggle active status - 🔒 SECURITY: Uses server-side API
   const toggleActive = async (linkId: string, currentStatus: boolean) => {
     try {
-      const linkRef = doc(firestore, "referral_links", linkId);
-      await updateDoc(linkRef, { active: !currentStatus });
+      const idToken = await auth.currentUser?.getIdToken();
       
+      if (!idToken) {
+        throw new Error('Authentication failed. Please log in again.');
+      }
+
+      const response = await fetch('/api/referrals/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          linkId,
+          active: !currentStatus,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to update link status');
+      }
+
+      // Update local state
       setLinks(links.map(link => 
         link.id === linkId ? { ...link, active: !currentStatus } : link
       ));
@@ -170,12 +207,12 @@ export default function ReferralsPage() {
       toast({
         title: currentStatus ? "Link deactivated" : "Link activated",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error toggling link:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to update link status",
+        description: error.message || "Failed to update link status",
       });
     }
   };

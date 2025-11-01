@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from 'react';
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase';
 import {
   Card,
@@ -132,11 +132,32 @@ export default function AdminAllOrdersPage() {
   const handleStatusChange = async (orderId: string, studentId: string, newStatus: OrderStatus) => {
     setUpdatingStatus(orderId);
     try {
-      const orderRef = doc(firestore, `users/${studentId}/orders/${orderId}`);
-      await updateDoc(orderRef, {
-        status: newStatus,
-        updatedAt: new Date()
+      // 🔒 SECURITY: Use server-side API instead of direct Firestore write
+      const { auth } = useFirebase();
+      
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) {
+        throw new Error('Authentication failed. Please log in again.');
+      }
+
+      const response = await fetch('/api/update-order-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          orderId,
+          studentId,
+          status: newStatus,
+        }),
       });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to update order status');
+      }
 
       // Update local state
       setOrders(prev => prev.map(order => 
@@ -149,12 +170,12 @@ export default function AdminAllOrdersPage() {
         title: "Status Updated!",
         description: `Order status changed to "${newStatus}"`,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating order status:', error);
       toast({
         variant: "destructive",
         title: "Update Failed",
-        description: "Failed to update order status. Please try again.",
+        description: error.message || "Failed to update order status. Please try again.",
       });
     } finally {
       setUpdatingStatus(null);
@@ -185,10 +206,20 @@ export default function AdminAllOrdersPage() {
         pageCount: orderToDelete.pageCount,
       });
       
-      // 🔥 NEW: Call the secure delete API
+      // 🔒 SECURITY: Call the secure delete API with authentication
+      const { auth } = useFirebase();
+      const idToken = await auth.currentUser?.getIdToken();
+      
+      if (!idToken) {
+        throw new Error('Authentication failed. Please log in again.');
+      }
+
       const response = await fetch('/api/delete-order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
         body: JSON.stringify({
           orderId: orderToDelete.id,
           studentId: orderToDelete.studentId,

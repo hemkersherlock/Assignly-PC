@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { v2 as cloudinary } from 'cloudinary';
+import { verifyAdminAuth, forbiddenResponse, unauthorizedResponse, sanitizeErrorMessage } from '@/lib/api-auth';
 
 // Initialize Firebase Admin if not already initialized
 if (!getApps().length) {
@@ -28,11 +29,13 @@ async function deleteCloudinaryFiles(originalFiles: any[], cloudinaryFolder?: st
     console.log('\n🧹 ========== CLOUDINARY DELETION START ==========');
     console.log('📂 Folder to delete:', cloudinaryFolder);
     console.log('📄 Files to delete:', originalFiles?.length || 0);
-    console.log('🔑 Cloudinary config:', {
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY ? '✅ SET' : '❌ NOT SET',
-      api_secret: process.env.CLOUDINARY_API_SECRET ? '✅ SET' : '❌ NOT SET'
-    });
+    // 🔒 SECURITY: Don't log environment variables
+    const hasCloudinaryConfig = !!(
+      process.env.CLOUDINARY_CLOUD_NAME &&
+      process.env.CLOUDINARY_API_KEY &&
+      process.env.CLOUDINARY_API_SECRET
+    );
+    console.log('🔑 Cloudinary config:', hasCloudinaryConfig ? '✅ SET' : '❌ NOT SET');
     
     if (!cloudinaryFolder) {
       console.log('⚠️ No cloudinary folder provided - skipping');
@@ -126,21 +129,42 @@ async function deleteCloudinaryFiles(originalFiles: any[], cloudinaryFolder?: st
 }
 
 export async function POST(request: NextRequest) {
-  const db = getFirestore();
-  const batch = db.batch();
-
   try {
+    // 🔒 SECURITY: Verify admin authentication
+    const adminAuth = await verifyAdminAuth(request);
+    if (!adminAuth) {
+      // Try to verify regular auth to give better error message
+      const { verifyAuthToken } = await import('@/lib/api-auth');
+      const authResult = await verifyAuthToken(request);
+      return authResult ? forbiddenResponse() : unauthorizedResponse();
+    }
+
     const { orderId, studentId, pageCount, originalFiles, cloudinaryFolder } = await request.json();
 
-    console.log('Starting order deletion process:', { orderId, studentId, pageCount });
+    console.log('🔒 Admin deleting order:', { 
+      adminId: adminAuth!.userId, 
+      adminEmail: adminAuth!.email,
+      orderId, 
+      studentId, 
+      pageCount 
+    });
 
     // Validate input
-    if (!orderId || !studentId || typeof pageCount !== 'number') {
+    if (!orderId || !studentId || typeof pageCount !== 'number' || pageCount < 0) {
       return NextResponse.json(
         { success: false, error: 'Invalid input parameters' },
         { status: 400 }
       );
     }
+
+    if (pageCount > 10000) {
+      return NextResponse.json(
+        { success: false, error: 'Page count exceeds maximum allowed' },
+        { status: 400 }
+      );
+    }
+
+    const db = getFirestore();
 
     // 1. Get current user data for credit restoration
     const userRef = db.collection('users').doc(studentId);
@@ -153,76 +177,102 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Verify order exists before deletion
+    const orderRef = db.collection(`users/${studentId}/orders`).doc(orderId);
+    const orderDoc = await orderRef.get();
+    
+    if (!orderDoc.exists) {
+      return NextResponse.json(
+        { success: false, error: 'Order not found' },
+        { status: 404 }
+      );
+    }
+
     const userData = userDoc.data();
     const currentCredits = userData?.creditsRemaining || 0;
     const currentTotalOrders = userData?.totalOrders || 0;
     const currentTotalPages = userData?.totalPages || 0;
 
-    console.log('Current user stats:', { currentCredits, currentTotalOrders, currentTotalPages });
+    // 🔒 SECURITY: Use transaction instead of batch for atomicity
+    await db.runTransaction(async (transaction) => {
+      // Re-read user doc inside transaction for consistency
+      const freshUserDoc = await transaction.get(userRef);
+      if (!freshUserDoc.exists) {
+        throw new Error('User not found during transaction');
+      }
 
-    // 2. 🔥 Queue Cloudinary deletion for later processing
-    let deletionQueueRef: any = null;
-    if (originalFiles && originalFiles.length > 0 && cloudinaryFolder) {
-      console.log('📋 Queueing Cloudinary files for deletion...');
-      
-      deletionQueueRef = db.collection('cloudinary_deletion_queue').doc();
-      batch.set(deletionQueueRef, {
-        orderId,
-        studentId,
-        cloudinaryFolder,
-        originalFiles,
-        status: 'pending',
-        createdAt: new Date(),
-        retryCount: 0,
+      const freshUserData = freshUserDoc.data()!;
+      const freshCredits = freshUserData.creditsRemaining || 0;
+      const freshTotalOrders = freshUserData.totalOrders || 0;
+      const freshTotalPages = freshUserData.totalPages || 0;
+
+      // Re-verify order exists inside transaction
+      const freshOrderDoc = await transaction.get(orderRef);
+      if (!freshOrderDoc.exists) {
+        throw new Error('Order not found during transaction');
+      }
+
+      // Calculate new values
+      const newCredits = freshCredits + pageCount;
+      const newTotalOrders = Math.max(0, freshTotalOrders - 1);
+      const newTotalPages = Math.max(0, freshTotalPages - pageCount);
+
+      // Delete order
+      transaction.delete(orderRef);
+
+      // Update user stats
+      transaction.update(userRef, {
+        creditsRemaining: newCredits,
+        totalOrders: newTotalOrders,
+        totalPages: newTotalPages,
       });
-      
-      console.log('✅ Files queued - will be processed by cleanup API');
-    } else {
-      console.log('No Cloudinary files to delete');
-    }
 
-    // 3. Delete the order document
-    const orderRef = db.collection(`users/${studentId}/orders`).doc(orderId);
-    batch.delete(orderRef);
-    console.log('Order document marked for deletion');
+      // Queue Cloudinary deletion if needed
+      if (originalFiles && originalFiles.length > 0 && cloudinaryFolder) {
+        const deletionQueueRef = db.collection('cloudinary_deletion_queue').doc();
+        transaction.set(deletionQueueRef, {
+          orderId,
+          studentId,
+          cloudinaryFolder,
+          originalFiles,
+          status: 'pending',
+          createdAt: new Date(),
+          retryCount: 0,
+          deletedBy: adminAuth!.userId,
+          deletedAt: new Date(),
+        });
+      }
 
-    // 4. Restore student credits and update stats
-    const newCredits = currentCredits + pageCount;
-    const newTotalOrders = Math.max(0, currentTotalOrders - 1);
-    const newTotalPages = Math.max(0, currentTotalPages - pageCount);
-
-    batch.update(userRef, {
-      creditsRemaining: newCredits,
-      totalOrders: newTotalOrders,
-      totalPages: newTotalPages,
+      console.log('✅ Transaction prepared:', { newCredits, newTotalOrders, newTotalPages });
     });
 
-    console.log('User stats update prepared:', { newCredits, newTotalOrders, newTotalPages });
+    // Create audit log for deletion
+    const auditLogRef = db.collection('audit_logs').doc();
+    await auditLogRef.set({
+      action: 'order_deleted',
+      adminId: adminAuth!.userId,
+      adminEmail: adminAuth!.email,
+      orderId,
+      studentId,
+      creditsRestored: pageCount,
+      timestamp: new Date(),
+    });
 
-    // 5. Commit all changes in a transaction
-    await batch.commit();
-    console.log('Transaction committed successfully');
+    console.log('✅ Order deleted successfully by admin:', adminAuth!.userId);
 
-    // 6. 🚀 NOW try immediate deletion (after queue is created!)
-    if (deletionQueueRef && cloudinaryFolder) {
+    // Get fresh user data for response
+    const updatedUserDoc = await userRef.get();
+    const updatedUserData = updatedUserDoc.data()!;
+
+    // 6. 🚀 Try immediate Cloudinary deletion in background (don't block response)
+    if (originalFiles && originalFiles.length > 0 && cloudinaryFolder) {
       console.log('🔥 Attempting immediate Cloudinary deletion...');
       
       // Don't await this - let it run in background
       deleteCloudinaryFiles(originalFiles, cloudinaryFolder)
-        .then(async (success) => {
-          if (success) {
-            console.log('✅ IMMEDIATE deletion SUCCESS!');
-            await deletionQueueRef.update({ 
-              status: 'completed', 
-              completedAt: new Date() 
-            });
-          } else {
-            console.log('⚠️ IMMEDIATE deletion PARTIAL - will retry from queue');
-          }
-        })
         .catch((error) => {
-          console.error('❌ IMMEDIATE deletion FAILED:', error);
-          console.log('Will be processed by cleanup API later');
+          console.error('❌ Background Cloudinary deletion failed:', error);
+          // Will be processed by cleanup API later
         });
     }
 
@@ -232,21 +282,19 @@ export async function POST(request: NextRequest) {
       cloudinaryQueued: !!(originalFiles && originalFiles.length > 0 && cloudinaryFolder),
       creditsRestored: pageCount,
       newUserStats: {
-        creditsRemaining: newCredits,
-        totalOrders: newTotalOrders,
-        totalPages: newTotalPages,
+        creditsRemaining: updatedUserData.creditsRemaining || 0,
+        totalOrders: updatedUserData.totalOrders || 0,
+        totalPages: updatedUserData.totalPages || 0,
       }
     });
 
   } catch (error) {
     console.error('Error in delete order API:', error);
     
-    // If batch was started, try to rollback (though Firestore doesn't support rollback)
-    // The transaction will automatically fail if any operation fails
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Failed to delete order' 
+        error: sanitizeErrorMessage(error)
       },
       { status: 500 }
     );

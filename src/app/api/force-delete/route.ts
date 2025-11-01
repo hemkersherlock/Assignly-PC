@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v2 as cloudinary } from 'cloudinary';
+import { verifyAdminAuth, forbiddenResponse, unauthorizedResponse, sanitizeErrorMessage } from '@/lib/api-auth';
 
 // Configure Cloudinary
 cloudinary.config({
@@ -11,10 +12,28 @@ cloudinary.config({
 
 export async function POST(request: NextRequest) {
   try {
+    // 🔒 SECURITY: Verify admin authentication
+    const adminAuth = await verifyAdminAuth(request);
+    if (!adminAuth) {
+      const { verifyAuthToken } = await import('@/lib/api-auth');
+      const authResult = await verifyAuthToken(request);
+      return authResult ? forbiddenResponse() : unauthorizedResponse();
+    }
+
+    // 🔒 SECURITY: Disable in production
+    if (process.env.NODE_ENV === 'production' && process.env.ENABLE_DEBUG_ROUTES !== 'true') {
+      return NextResponse.json(
+        { success: false, error: 'Test routes are disabled in production' },
+        { status: 403 }
+      );
+    }
+
     const { url } = await request.json();
     
-    console.log('=== FORCE DELETE TEST ===');
-    console.log('URL:', url);
+    console.log('🔒 Admin force delete test:', {
+      adminId: adminAuth.userId,
+      url,
+    });
     
     // Extract public ID from URL
     const urlParts = url.split('/');
@@ -71,7 +90,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Force delete error:', error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: sanitizeErrorMessage(error) },
       { status: 500 }
     );
   }

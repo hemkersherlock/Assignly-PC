@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { v2 as cloudinary } from 'cloudinary';
+import { sanitizeErrorMessage } from '@/lib/api-auth';
 
 // Initialize Firebase Admin if not already initialized
 if (!getApps().length) {
@@ -27,11 +28,13 @@ async function deleteCloudinaryFolder(cloudinaryFolder: string): Promise<boolean
   try {
     console.log('\n🧹 ========== CLEANUP API: CLOUDINARY DELETION START ==========');
     console.log('📂 Folder:', cloudinaryFolder);
-    console.log('🔑 Config:', {
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY ? '✅ SET' : '❌ NOT SET',
-      api_secret: process.env.CLOUDINARY_API_SECRET ? '✅ SET' : '❌ NOT SET'
-    });
+    // 🔒 SECURITY: Don't log environment variables
+    const hasCloudinaryConfig = !!(
+      process.env.CLOUDINARY_CLOUD_NAME &&
+      process.env.CLOUDINARY_API_KEY &&
+      process.env.CLOUDINARY_API_SECRET
+    );
+    console.log('🔑 Config:', hasCloudinaryConfig ? '✅ SET' : '❌ NOT SET');
     
     // 🔧 FIX: Check for OLD duplicated paths (bug fix for legacy uploads)
     let folderContents = await cloudinary.api.resources({
@@ -188,7 +191,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Failed to process cleanup' 
+        error: sanitizeErrorMessage(error)
       },
       { status: 500 }
     );
@@ -222,7 +225,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Failed to check status' 
+        error: sanitizeErrorMessage(error)
       },
       { status: 500 }
     );

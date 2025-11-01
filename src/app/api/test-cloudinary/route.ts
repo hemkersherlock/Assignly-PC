@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v2 as cloudinary } from 'cloudinary';
+import { verifyAdminAuth, forbiddenResponse, unauthorizedResponse, sanitizeErrorMessage } from '@/lib/api-auth';
 
 // Configure Cloudinary
 cloudinary.config({
@@ -11,6 +12,22 @@ cloudinary.config({
 
 export async function POST(request: NextRequest) {
   try {
+    // 🔒 SECURITY: Verify admin authentication - test routes should be protected
+    const adminAuth = await verifyAdminAuth(request);
+    if (!adminAuth) {
+      const { verifyAuthToken } = await import('@/lib/api-auth');
+      const authResult = await verifyAuthToken(request);
+      return authResult ? forbiddenResponse() : unauthorizedResponse();
+    }
+
+    // 🔒 SECURITY: Disable in production unless explicitly enabled
+    if (process.env.NODE_ENV === 'production' && process.env.ENABLE_DEBUG_ROUTES !== 'true') {
+      return NextResponse.json(
+        { success: false, error: 'Test routes are disabled in production' },
+        { status: 403 }
+      );
+    }
+
     const { publicId } = await request.json();
     
     if (!publicId) {
@@ -20,12 +37,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Testing Cloudinary deletion for: ${publicId}`);
-    console.log('Cloudinary config:', {
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY ? 'SET' : 'NOT SET',
-      api_secret: process.env.CLOUDINARY_API_SECRET ? 'SET' : 'NOT SET'
+    console.log(`🔒 Admin testing Cloudinary deletion:`, {
+      adminId: adminAuth.userId,
+      publicId,
     });
+    
+    // 🔒 SECURITY: Don't log environment variables
+    const hasCloudinaryConfig = !!(
+      process.env.CLOUDINARY_CLOUD_NAME &&
+      process.env.CLOUDINARY_API_KEY &&
+      process.env.CLOUDINARY_API_SECRET
+    );
+    console.log('Cloudinary config:', hasCloudinaryConfig ? 'SET' : 'NOT SET');
 
     // Test the deletion
     const result = await cloudinary.uploader.destroy(publicId);
@@ -42,7 +65,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Failed to test Cloudinary deletion' 
+        error: sanitizeErrorMessage(error)
       },
       { status: 500 }
     );

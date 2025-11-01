@@ -139,14 +139,17 @@ service cloud.firestore {
      /**
       * @description Rule for the /roles_admin/{userId} collection.
       * @path /roles_admin/{userId}
-      * @allow (get) Anyone can get admin role documents.
+      * @allow (get) Only admins or the user themselves can check admin status.
+      * @deny (get) Public enumeration of admin accounts prevented.
       * @allow (create) Only admins can assign admin roles.
       * @allow (update) No one can update the roles.
       * @allow (delete) Only admins can remove admin roles.
-      * @principle Only admins can create or delete admin roles.
+      * @principle Only admins can create or delete admin roles. Prevents admin enumeration.
       */
     match /roles_admin/{userId} {
-        allow get: if true;
+        // 🔒 SECURITY: Only allow users to check their own admin status or admins to check any status
+        // This prevents enumeration of admin accounts by attackers
+        allow get: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
         allow list: if false;
         allow create: if isAdmin();
         allow update: if false;
