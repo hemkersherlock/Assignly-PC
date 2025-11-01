@@ -20,11 +20,12 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCollection } from "@/firebase/firestore/use-collection";
-import { collection, query, orderBy, limit, doc, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, query, orderBy, limit } from "firebase/firestore";
 import { useFirebase, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/context/AuthContext";
 import { RefreshCw, UserPlus, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { httpsCallable, type HttpsCallable } from "firebase/functions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,7 +44,7 @@ export default function AdminCreditsPage() {
     const [adjustment, setAdjustment] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const { toast } = useToast();
-    const { firestore } = useFirebase();
+    const { firestore, functions } = useFirebase();
     const { user: currentUser } = useAuthContext();
 
     // Get all users (students)
@@ -74,32 +75,30 @@ export default function AdminCreditsPage() {
         
         setIsLoading(true);
         try {
-            const batch = writeBatch(firestore);
+            // Use server-side Cloud Function for secure credit addition
+            const bulkAddCredits = httpsCallable(functions, 'bulkAddCreditsToAll') as HttpsCallable<{ creditAmount?: number; reason?: string }, { success: boolean; usersProcessed: number; creditsAdded: number }>;
             
-            students.forEach(student => {
-                const userRef = doc(firestore, 'users', student.id);
-                const currentCredits = student.creditsRemaining || 0;
-                // Add 40 credits to existing credits (credits accumulate)
-                const newCredits = currentCredits + 40;
-                batch.update(userRef, {
-                    creditsRemaining: newCredits,
-                    lastReplenishedAt: new Date(),
-                    lastCreditRollover: new Date() // Update rollover date
+            const result = await bulkAddCredits({
+                creditAmount: 40,
+                reason: 'Monthly credit addition - admin bulk operation'
+            });
+            
+            const data = result.data;
+            
+            if (data.success) {
+                toast({ 
+                    title: 'Success!', 
+                    description: `Added 40 credits to ${data.usersProcessed} students. Total credits added: ${data.creditsAdded}. All changes are logged in audit trail.`
                 });
-            });
-            
-            await batch.commit();
-            
-            toast({ 
-                title: 'Success!', 
-                description: `Added 40 credits to all ${students.length} students. Credits accumulate and never expire.`
-            });
+            } else {
+                throw new Error('Bulk credit addition failed');
+            }
         } catch (error: any) {
             console.error('Failed to replenish credits:', error);
             toast({
                 variant: "destructive",
                 title: "Error",
-                description: "Failed to replenish credits. Please try again."
+                description: error.message || "Failed to replenish credits. Please try again."
             });
         } finally {
             setIsLoading(false);
@@ -119,35 +118,46 @@ export default function AdminCreditsPage() {
             return;
         }
         
+        const studentData = students.find(s => s.id === selectedStudent);
+        if (!studentData) {
+            toast({
+                variant: "destructive",
+                title: "Error",
+                description: "Student not found."
+            });
+            return;
+        }
+        
         setIsLoading(true);
         try {
-            const studentRef = doc(firestore, 'users', selectedStudent);
-            const studentData = students.find(s => s.id === selectedStudent);
+            // Use server-side Cloud Function for secure credit adjustment
+            const adjustCredits = httpsCallable(functions, 'adjustUserCredits') as HttpsCallable<{ userId: string; creditAmount: number; reason?: string }, { success: boolean; newCredits: number; oldCredits: number }>;
             
-            if (!studentData) {
-                throw new Error('Student not found');
+            const result = await adjustCredits({
+                userId: selectedStudent,
+                creditAmount: adjustmentValue,
+                reason: `Manual adjustment by admin - ${adjustmentValue > 0 ? 'Added' : 'Subtracted'} ${Math.abs(adjustmentValue)} credits`
+            });
+            
+            const data = result.data;
+            
+            if (data.success) {
+                toast({ 
+                    title: 'Success!', 
+                    description: `Credits for ${studentData.email} adjusted by ${adjustmentValue}. Old: ${data.oldCredits}, New: ${data.newCredits} credits.`
+                });
+                
+                setSelectedStudent('');
+                setAdjustment('');
+            } else {
+                throw new Error('Credit adjustment failed');
             }
-            
-            const newCredits = Math.max(0, studentData.creditsRemaining + adjustmentValue);
-            
-            await updateDoc(studentRef, {
-                creditsRemaining: newCredits,
-                lastAdjustedAt: new Date()
-            });
-            
-            toast({ 
-                title: 'Success!', 
-                description: `Credits for ${studentData.email} have been adjusted by ${adjustmentValue}. New total: ${newCredits} credits.`
-            });
-            
-            setSelectedStudent('');
-            setAdjustment('');
         } catch (error: any) {
             console.error('Failed to adjust credits:', error);
             toast({
                 variant: "destructive",
                 title: "Error",
-                description: "Failed to adjust credits. Please try again."
+                description: error.message || "Failed to adjust credits. Please try again."
             });
         } finally {
             setIsLoading(false);

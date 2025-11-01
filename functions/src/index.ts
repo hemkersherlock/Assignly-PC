@@ -471,8 +471,84 @@ export const detectFraud = functions.pubsub
   });
 
 // ============================================================================
-// 💰 MONTHLY CREDIT ROLLOVER - Credits Preserve Based on Enrollment Date
+// 💰 MONTHLY CREDIT ROLLOVER - Professional System with Transaction Protection
 // ============================================================================
+
+/**
+ * Helper function to normalize dates to UTC and extract year/month/day
+ */
+function normalizeDate(date: Date): { year: number; month: number; day: number } {
+  const utcDate = new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate()
+  ));
+  return {
+    year: utcDate.getUTCFullYear(),
+    month: utcDate.getUTCMonth(),
+    day: utcDate.getUTCDate(),
+  };
+}
+
+/**
+ * Check if rollover should happen based on enrollment/last rollover date
+ * Returns true if current date >= anniversary date AND hasn't rolled over this month
+ */
+function checkShouldRollover(
+  enrollmentDate: admin.firestore.Timestamp | Date,
+  lastRollover: admin.firestore.Timestamp | Date | null,
+  now: Date
+): { shouldRollover: boolean; reason: string } {
+  // Normalize all dates to UTC
+  const nowNormalized = normalizeDate(now);
+  
+  // Get base date (lastRollover if exists, otherwise enrollment)
+  let baseDate: Date;
+  if (lastRollover) {
+    baseDate = (lastRollover as admin.firestore.Timestamp).toDate 
+      ? (lastRollover as admin.firestore.Timestamp).toDate() 
+      : new Date(lastRollover as Date);
+  } else {
+    baseDate = (enrollmentDate as admin.firestore.Timestamp).toDate 
+      ? (enrollmentDate as admin.firestore.Timestamp).toDate() 
+      : new Date(enrollmentDate as Date);
+  }
+  
+  const baseNormalized = normalizeDate(baseDate);
+  
+  // Calculate next anniversary date (same day next month)
+  let nextAnniversaryYear = baseNormalized.year;
+  let nextAnniversaryMonth = baseNormalized.month + 1;
+  if (nextAnniversaryMonth > 11) {
+    nextAnniversaryMonth = 0;
+    nextAnniversaryYear += 1;
+  }
+  
+  // Check if we've reached or passed the anniversary
+  const hasReachedAnniversary = 
+    nowNormalized.year > nextAnniversaryYear ||
+    (nowNormalized.year === nextAnniversaryYear && nowNormalized.month > nextAnniversaryMonth) ||
+    (nowNormalized.year === nextAnniversaryYear && nowNormalized.month === nextAnniversaryMonth && nowNormalized.day >= baseNormalized.day);
+  
+  if (!hasReachedAnniversary) {
+    return { shouldRollover: false, reason: 'Anniversary date not reached yet' };
+  }
+  
+  // If we have a lastRollover, check if we already rolled over this month
+  if (lastRollover) {
+    const lastRolloverDate = (lastRollover as admin.firestore.Timestamp).toDate 
+      ? (lastRollover as admin.firestore.Timestamp).toDate() 
+      : new Date(lastRollover as Date);
+    const lastNormalized = normalizeDate(lastRolloverDate);
+    
+    // Already rolled over this month?
+    if (nowNormalized.year === lastNormalized.year && nowNormalized.month === lastNormalized.month) {
+      return { shouldRollover: false, reason: 'Already rolled over this month' };
+    }
+  }
+  
+  return { shouldRollover: true, reason: 'Anniversary reached, rollover needed' };
+}
 
 /**
  * Monthly credit rollover function
@@ -480,6 +556,12 @@ export const detectFraud = functions.pubsub
  * Preserves existing credits when it's been a month since enrollment/last rollover
  * Credits roll over on the enrollment date anniversary (e.g., enrolled Oct 29, rolls over Nov 29+)
  * NO automatic credit addition - admin adds credits manually based on payment status
+ * 
+ * FIXES:
+ * - ✅ Proper UTC date normalization
+ * - ✅ Transaction protection with idempotency checks
+ * - ✅ Enhanced logging with user details
+ * - ✅ Prevents duplicate rollovers in same month
  */
 export const monthlyCreditRollover = functions.pubsub
   .schedule('every 24 hours') // Run daily to check enrollment anniversaries
@@ -491,113 +573,119 @@ export const monthlyCreditRollover = functions.pubsub
       const now = new Date();
       const usersSnapshot = await db.collection('users').where('role', '==', 'student').get();
       let processedCount = 0;
+      let skippedCount = 0;
+      const processedUsers: string[] = [];
+      const skippedReasons: Record<string, number> = {};
       
-      const BATCH_SIZE = 500; // Firestore batch limit
-      let batch = db.batch();
-      let batchCount = 0;
+      const BATCH_SIZE = 450; // Keep below 500 for safety
       
+      // Process in transactions for atomicity
       for (const userDoc of usersSnapshot.docs) {
         const userData = userDoc.data();
         
         // Only process active students
         if (!userData.isActive) {
+          skippedReasons['inactive'] = (skippedReasons['inactive'] || 0) + 1;
           continue;
         }
         
-        const currentCredits = userData.creditsRemaining || 0;
         const enrollmentDate = userData.createdAt;
-        const lastRollover = userData.lastCreditRollover;
+        const lastRollover = userData.lastCreditRollover || null;
         
-        // Determine the base date for rollover calculation
-        // If lastRollover exists, use that; otherwise use enrollment date
-        let baseDate: Date;
-        if (lastRollover) {
-          baseDate = lastRollover.toDate ? lastRollover.toDate() : new Date(lastRollover);
-        } else if (enrollmentDate) {
-          baseDate = enrollmentDate.toDate ? enrollmentDate.toDate() : new Date(enrollmentDate);
-        } else {
-          // No enrollment date, skip this user
+        // Validate required fields
+        if (!enrollmentDate) {
+          skippedReasons['no_enrollment_date'] = (skippedReasons['no_enrollment_date'] || 0) + 1;
           continue;
         }
         
-        // Calculate if a month has passed (based on calendar month)
-        const baseYear = baseDate.getFullYear();
-        const baseMonth = baseDate.getMonth();
-        const baseDay = baseDate.getDate();
+        // Check if rollover should happen
+        const { shouldRollover, reason } = checkShouldRollover(enrollmentDate, lastRollover, now);
         
-        const currentYear = now.getFullYear();
-        const currentMonth = now.getMonth();
-        const currentDay = now.getDate();
-        
-        // Check if we're past the anniversary date in the current month
-        let shouldRollover = false;
-        
-        if (currentYear > baseYear || 
-            (currentYear === baseYear && currentMonth > baseMonth) ||
-            (currentYear === baseYear && currentMonth === baseMonth && currentDay >= baseDay)) {
-          // Check if we haven't already rolled over for this month
-          if (lastRollover) {
-            const lastRolloverDate = lastRollover.toDate ? lastRollover.toDate() : new Date(lastRollover);
-            const lastRolloverMonth = lastRolloverDate.getMonth();
-            const lastRolloverYear = lastRolloverDate.getFullYear();
-            
-            // Rollover if last rollover was in a different month/year
-            if (currentYear > lastRolloverYear || 
-                (currentYear === lastRolloverYear && currentMonth > lastRolloverMonth)) {
-              shouldRollover = true;
-            }
-          } else {
-            // First rollover based on enrollment date
-            if (currentYear > baseYear || 
-                (currentYear === baseYear && currentMonth > baseMonth) ||
-                (currentYear === baseYear && currentMonth === baseMonth && currentDay >= baseDay)) {
-              shouldRollover = true;
-            }
-          }
+        if (!shouldRollover) {
+          skippedReasons[reason] = (skippedReasons[reason] || 0) + 1;
+          continue;
         }
         
-        if (shouldRollover) {
-          // Just preserve credits and update rollover date
-          // Credits are preserved, no automatic addition
-          const userRef = db.collection('users').doc(userDoc.id);
-          batch.update(userRef, {
-            // Credits remain the same - just preserve them
-            lastCreditRollover: admin.firestore.FieldValue.serverTimestamp(),
+        // Use transaction to ensure atomicity and prevent duplicate rollovers
+        try {
+          await db.runTransaction(async (transaction) => {
+            const userRef = db.collection('users').doc(userDoc.id);
+            const freshDoc = await transaction.get(userRef);
+            
+            if (!freshDoc.exists) {
+              throw new Error('User document not found');
+            }
+            
+            const freshData = freshDoc.data()!;
+            
+            // Double-check rollover is still needed (idempotency check)
+            const freshLastRollover = freshData.lastCreditRollover || null;
+            const { shouldRollover: stillNeeded } = checkShouldRollover(
+              freshData.createdAt,
+              freshLastRollover,
+              now
+            );
+            
+            if (!stillNeeded) {
+              throw new Error('Rollover already completed (idempotency check)');
+            }
+            
+            // Update rollover date atomically (credits remain unchanged)
+            transaction.update(userRef, {
+              lastCreditRollover: admin.firestore.FieldValue.serverTimestamp(),
+            });
           });
           
-          batchCount++;
+          processedCount++;
+          processedUsers.push(userDoc.id);
           
-          // Commit batch if we hit the limit
-          if (batchCount >= BATCH_SIZE) {
-            await batch.commit();
-            processedCount += batchCount;
-            batchCount = 0;
-            batch = db.batch(); // Create new batch
+          // Log individual rollover (batch for efficiency)
+          if (processedUsers.length >= 50) {
+            await db.collection('credit_rollover_logs').add({
+              batch: true,
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+              userIds: processedUsers.splice(0, 50),
+              action: 'credit_rollover',
+              note: 'Credits preserved, rollover date updated',
+            });
           }
+          
+        } catch (error) {
+          // Transaction conflict or validation failure - log but don't fail entire batch
+          console.warn(`⚠️ Failed to rollover user ${userDoc.id}:`, error instanceof Error ? error.message : String(error));
+          skippedReasons['transaction_failed'] = (skippedReasons['transaction_failed'] || 0) + 1;
         }
       }
       
-      // Commit remaining updates
-      if (batchCount > 0) {
-        await batch.commit();
-        processedCount += batchCount;
-      }
-      
-      // Log rollover activity
-      if (processedCount > 0) {
+      // Log remaining processed users
+      if (processedUsers.length > 0) {
         await db.collection('credit_rollover_logs').add({
-          date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
+          batch: true,
           timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          usersProcessed: processedCount,
-          note: 'Credits preserved based on enrollment anniversary - no automatic credit addition',
+          userIds: processedUsers,
+          action: 'credit_rollover',
+          note: 'Credits preserved, rollover date updated',
         });
       }
       
-      console.log(`✅ Monthly credit rollover check completed: ${processedCount} users rolled over (credits preserved)`);
+      // Log summary
+      await db.collection('credit_rollover_logs').add({
+        summary: true,
+        date: `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        usersProcessed: processedCount,
+        usersSkipped: skippedCount,
+        skipReasons: skippedReasons,
+        note: 'Monthly credit rollover completed - credits preserved',
+      });
+      
+      console.log(`✅ Monthly credit rollover completed: ${processedCount} users processed, ${Object.keys(skippedReasons).length} skip reasons`);
       
       return {
         success: true,
         usersProcessed: processedCount,
+        usersSkipped: skippedCount,
+        skipReasons: skippedReasons,
         message: 'Credits preserved based on enrollment anniversary',
       };
       
@@ -608,6 +696,7 @@ export const monthlyCreditRollover = functions.pubsub
       await db.collection('error_logs').add({
         function: 'monthlyCreditRollover',
         error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
       });
       
@@ -616,11 +705,11 @@ export const monthlyCreditRollover = functions.pubsub
   });
 
 /**
- * Manual trigger for credit rollover check (for testing)
- * This just preserves credits based on enrollment date, doesn't add new credits
+ * Manual trigger for credit rollover check (for testing/admin use)
+ * Uses same logic as scheduled function with proper validation
  */
 export const manualCreditRollover = functions.https.onCall(async (data, context) => {
-  // Check if user is admin (optional security check)
+  // Check if user is admin
   if (!context.auth) {
     throw new HttpsError('unauthenticated', 'User must be authenticated');
   }
@@ -635,64 +724,57 @@ export const manualCreditRollover = functions.https.onCall(async (data, context)
     const now = new Date();
     const usersSnapshot = await db.collection('users').where('role', '==', 'student').get();
     let processedCount = 0;
+    const processedUsers: string[] = [];
     
     for (const userDoc of usersSnapshot.docs) {
       const userData = userDoc.data();
       
-      if (!userData.isActive) {
+      if (!userData.isActive || !userData.createdAt) {
         continue;
       }
       
-      const enrollmentDate = userData.createdAt;
-      const lastRollover = userData.lastCreditRollover;
-      
-      // Determine base date
-      let baseDate: Date;
-      if (lastRollover) {
-        baseDate = lastRollover.toDate ? lastRollover.toDate() : new Date(lastRollover);
-      } else if (enrollmentDate) {
-        baseDate = enrollmentDate.toDate ? enrollmentDate.toDate() : new Date(enrollmentDate);
-      } else {
-        continue;
-      }
-      
-      // Check if month has passed
-      const baseYear = baseDate.getFullYear();
-      const baseMonth = baseDate.getMonth();
-      const baseDay = baseDate.getDate();
-      
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth();
-      const currentDay = now.getDate();
-      
-      let shouldRollover = false;
-      
-      if (currentYear > baseYear || 
-          (currentYear === baseYear && currentMonth > baseMonth) ||
-          (currentYear === baseYear && currentMonth === baseMonth && currentDay >= baseDay)) {
-        if (lastRollover) {
-          const lastRolloverDate = lastRollover.toDate ? lastRollover.toDate() : new Date(lastRollover);
-          const lastRolloverMonth = lastRolloverDate.getMonth();
-          const lastRolloverYear = lastRolloverDate.getFullYear();
-          
-          if (currentYear > lastRolloverYear || 
-              (currentYear === lastRolloverYear && currentMonth > lastRolloverMonth)) {
-            shouldRollover = true;
-          }
-        } else {
-          shouldRollover = true;
-        }
-      }
+      const { shouldRollover } = checkShouldRollover(
+        userData.createdAt,
+        userData.lastCreditRollover || null,
+        now
+      );
       
       if (shouldRollover) {
-        // Just update rollover date, preserve credits
-        await db.collection('users').doc(userDoc.id).update({
-          lastCreditRollover: admin.firestore.FieldValue.serverTimestamp(),
+        // Use transaction for atomicity
+        await db.runTransaction(async (transaction) => {
+          const userRef = db.collection('users').doc(userDoc.id);
+          const freshDoc = await transaction.get(userRef);
+          const freshData = freshDoc.data()!;
+          
+          // Idempotency check
+          const { shouldRollover: stillNeeded } = checkShouldRollover(
+            freshData.createdAt,
+            freshData.lastCreditRollover || null,
+            now
+          );
+          
+          if (!stillNeeded) {
+            throw new Error('Already rolled over');
+          }
+          
+          transaction.update(userRef, {
+            lastCreditRollover: admin.firestore.FieldValue.serverTimestamp(),
+          });
         });
         
         processedCount++;
+        processedUsers.push(userDoc.id);
       }
     }
+    
+    // Audit log
+    await db.collection('audit_logs').add({
+      action: 'manual_credit_rollover',
+      adminId: context.auth.uid,
+      usersProcessed: processedCount,
+      userIds: processedUsers,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
     
     return {
       success: true,
@@ -703,6 +785,102 @@ export const manualCreditRollover = functions.https.onCall(async (data, context)
   } catch (error) {
     console.error('Error in manual credit rollover:', error);
     throw new HttpsError('internal', 'Failed to rollover credits');
+  }
+});
+
+// ============================================================================
+// 🔒 BULK CREDIT ADDITION - Server-Side Only (Replaces Client-Side Admin Quota)
+// ============================================================================
+
+/**
+ * Bulk add credits to all active students
+ * Server-side only - prevents client manipulation
+ */
+export const bulkAddCreditsToAll = functions.https.onCall(async (data, context) => {
+  // Admin authentication
+  if (!context.auth) {
+    throw new HttpsError('unauthenticated', 'Must be authenticated');
+  }
+  
+  const adminId = context.auth.uid;
+  const adminRoleDoc = await db.collection('roles_admin').doc(adminId).get();
+  if (!adminRoleDoc.exists) {
+    throw new HttpsError('permission-denied', 'Only admins can bulk add credits');
+  }
+  
+  const { creditAmount = 40, reason } = data;
+  
+  if (creditAmount <= 0 || creditAmount > 1000) {
+    throw new HttpsError('invalid-argument', 'Credit amount must be between 1 and 1000');
+  }
+  
+  try {
+    const usersSnapshot = await db.collection('users')
+      .where('role', '==', 'student')
+      .where('isActive', '==', true)
+      .get();
+    
+    let processedCount = 0;
+    let creditsAdded = 0;
+    const processedUsers: Array<{ userId: string; oldCredits: number; newCredits: number }> = [];
+    
+    // Process in batches with transactions
+    for (const userDoc of usersSnapshot.docs) {
+      try {
+        await db.runTransaction(async (transaction) => {
+          const userRef = db.collection('users').doc(userDoc.id);
+          const freshDoc = await transaction.get(userRef);
+          
+          if (!freshDoc.exists) {
+            throw new Error('User not found');
+          }
+          
+          const freshData = freshDoc.data()!;
+          const currentCredits = freshData.creditsRemaining || 0;
+          const newCredits = currentCredits + creditAmount;
+          
+          transaction.update(userRef, {
+            creditsRemaining: newCredits,
+            lastCreditRollover: admin.firestore.FieldValue.serverTimestamp(),
+            lastReplenishedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          
+          processedUsers.push({
+            userId: userDoc.id,
+            oldCredits: currentCredits,
+            newCredits: newCredits,
+          });
+        });
+        
+        processedCount++;
+        creditsAdded += creditAmount;
+      } catch (error) {
+        console.warn(`Failed to add credits to user ${userDoc.id}:`, error);
+      }
+    }
+    
+    // Audit log
+    await db.collection('audit_logs').add({
+      action: 'bulk_credits_added',
+      adminId,
+      creditAmount,
+      usersProcessed: processedCount,
+      totalCreditsAdded: creditsAdded,
+      reason: reason || 'Bulk credit addition',
+      processedUsers: processedUsers.slice(0, 100), // Limit to first 100 for log size
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    
+    return {
+      success: true,
+      usersProcessed: processedCount,
+      creditsAdded: creditsAdded,
+      creditAmountPerUser: creditAmount,
+    };
+    
+  } catch (error) {
+    console.error('Error in bulk credit addition:', error);
+    throw new HttpsError('internal', 'Failed to bulk add credits');
   }
 });
 
