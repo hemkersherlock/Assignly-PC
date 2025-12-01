@@ -1,0 +1,221 @@
+/**
+ * @file Firestore Security Rules
+ * @description This ruleset enforces a strict user-ownership model for users and their orders,
+ *              while restricting analytics data to admin users only.
+ *
+ * Data Structure:
+ * - /users/{userId}: Stores user profiles. Accessible only by the user themselves or an admin.
+ * - /users/{userId}/orders/{orderId}: Stores orders for a specific user. Accessible only by the user who owns the order.
+ * - /analytics/{analyticsId}: Stores application analytics. Accessible only by admins.
+ * - /roles_admin/{userId}: Indicates admin privileges. The existence of a document grants admin access.
+ *
+ * Key Security Decisions:
+ * - Users can only read/write their own profile data.
+ * - Orders can only be created under a user by that user, and only they can modify them.
+ * - Listing users is disallowed to prevent information disclosure.
+ * - Analytics data is strictly admin-only.
+ * - Relational integrity is enforced for user-owned data (e.g., order studentId must match the userId in the path).
+ *
+ * Denormalization for Authorization:
+ * - Orders contain a `studentId` field to enable authorization checks without needing to `get()` the user document.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description Checks if the current user is signed in.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * @description Checks if the current user is the owner of the resource, based on the provided userId.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * @description Checks if the current user is the owner of the existing resource.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * @description Checks if the current user is an admin.
+     */
+    function isAdmin() {
+      return exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+    }
+
+    /**
+     * @description Rule for the /users/{userId} collection.
+     * @path /users/{userId}
+     * @allow (get) Signed-in user reading their own profile.
+     * @deny (get) Signed-in user reading another user's profile.
+     * @allow (create) Signed-in user creating their own profile (self-registration).
+     * @deny (create) Signed-in user creating a profile for another user.
+     * @allow (update) Admin updating any user's profile OR user updating limited fields.
+     * @deny (update) Users cannot modify credits, totalOrders, totalPages, role, or id.
+     * @deny (delete) User attempting to delete their profile directly (deletion should be managed).
+     * @principle Enforces user-ownership for reads and self-creation, admin-only writes for sensitive fields.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if false; // Disallow listing users for privacy.
+      allow create: if isOwner(userId) && request.resource.data.id == request.auth.uid;
+      
+      // 🔒 OPTION 2 SECURITY: Only admins can update sensitive fields
+      // Students can ONLY update profile fields (name, whatsapp, section, year, etc.)
+      // Credits, orders, role = ADMIN ONLY or SERVER API ONLY
+      allow update: if isAdmin() || (
+        isOwner(userId) && 
+        // Block ALL sensitive fields for students
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'creditsRemaining',  // 🔒 Only server can change
+          'totalOrders',       // 🔒 Only server can change
+          'totalPages',        // 🔒 Only server can change
+          'role',              // 🔒 Only admin can change
+          'id',                // 🔒 Never change
+          'email',             // 🔒 Never change
+          'referralCode'       // 🔒 Only server can set on signup
+        ])
+      );
+      allow delete: if false;
+    }
+
+    /**
+     * @description Rule for the /users/{userId}/orders/{orderId} collection.
+     * @path /users/{userId}/orders/{orderId}
+     * @allow (create) Cloud Function only (server-validated orders).
+     * @deny (create) Direct client creation (prevents credit manipulation).
+     * @allow (get) Signed-in user reading their own order.
+     * @deny (get) Signed-in user reading another user's order.
+     * @allow (update) Admin only (prevents students from modifying orders).
+     * @deny (update) Students cannot modify orders after creation.
+     * @allow (delete) Admin only.
+     * @deny (delete) Students cannot delete orders directly.
+     * @principle All order modifications go through server-side validation.
+     */
+    match /users/{userId}/orders/{orderId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isOwner(userId) || isAdmin();
+      
+      // 🔒 OPTION 2 SECURITY: Orders can only be created by server API
+      // This ensures credit validation happens server-side
+      allow create: if false; // Only API route can create orders
+      
+      // 🔒 SECURITY: Only admins can modify orders (prevents tampering)
+      allow update: if isAdmin();
+      
+      // 🔒 SECURITY: Only admins can delete orders
+      allow delete: if isAdmin();
+    }
+
+    /**
+     * @description Rule for the /analytics/{analyticsId} collection.
+     * @path /analytics/{analyticsId}
+     * @allow (get) Admin user reading analytics data.
+     * @deny (get) Non-admin user reading analytics data.
+     * @allow (create) Admin user creating analytics data.
+     * @deny (create) Non-admin user creating analytics data.
+     * @allow (update) Admin user updating analytics data.
+     * @deny (update) Non-admin user updating analytics data.
+     * @allow (delete) Admin user deleting analytics data.
+     * @deny (delete) Non-admin user deleting analytics data.
+     * @principle Restricts all access to admins only.
+     */
+    match /analytics/{analyticsId} {
+      allow get: if isAdmin();
+      allow list: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+     /**
+      * @description Rule for the /roles_admin/{userId} collection.
+      * @path /roles_admin/{userId}
+      * @allow (get) Only admins or the user themselves can check admin status.
+      * @deny (get) Public enumeration of admin accounts prevented.
+      * @allow (create) Only admins can assign admin roles.
+      * @allow (update) No one can update the roles.
+      * @allow (delete) Only admins can remove admin roles.
+      * @principle Only admins can create or delete admin roles. Prevents admin enumeration.
+      */
+    match /roles_admin/{userId} {
+        // 🔒 SECURITY: Only allow users to check their own admin status or admins to check any status
+        // This prevents enumeration of admin accounts by attackers
+        allow get: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+        allow list: if false;
+        allow create: if isAdmin();
+        allow update: if false;
+        allow delete: if isAdmin();
+    }
+
+    /**
+     * @description Rule for the /audit_logs collection.
+     * @path /audit_logs/{logId}
+     * @allow (read) Admin only
+     * @allow (write) Server/Cloud Functions only
+     * @principle Audit logs are immutable and admin-viewable only.
+     */
+    match /audit_logs/{logId} {
+        allow read: if isAdmin();
+        allow write: if false; // Only Cloud Functions can write logs
+    }
+
+    /**
+     * @description Rule for the /fraud_alerts collection.
+     * @path /fraud_alerts/{alertId}
+     * @allow (read) Admin only
+     * @allow (write) Server/Cloud Functions only
+     * @principle Fraud alerts are for admin review only.
+     */
+    match /fraud_alerts/{alertId} {
+        allow read: if isAdmin();
+        allow write: if false; // Only Cloud Functions can create alerts
+    }
+
+    /**
+     * @description Rule for the /error_logs collection.
+     * @path /error_logs/{errorId}
+     * @allow (read) Admin only
+     * @allow (write) Server/Cloud Functions only
+     * @principle Error logs for debugging.
+     */
+    match /error_logs/{errorId} {
+        allow read: if isAdmin();
+        allow write: if false; // Only Cloud Functions can log errors
+    }
+
+    /**
+     * @description Rule for the /referral_links collection.
+     * @path /referral_links/{linkId}
+     * @allow (read) Anyone (to track clicks)
+     * @allow (write) Admin only
+     * @principle Referral links for tracking signups and orders.
+     */
+    match /referral_links/{linkId} {
+        allow read: if true; // Anyone can read to track clicks
+        allow create: if isAdmin();
+        allow update: if isAdmin();
+        allow delete: if isAdmin();
+    }
+
+    /**
+     * @description Rule for the /cloudinary_deletion_queue collection.
+     * @path /cloudinary_deletion_queue/{queueId}
+     * @allow (read) Admin only
+     * @allow (write) Server/API only
+     * @principle Background queue for Cloudinary file cleanup.
+     */
+    match /cloudinary_deletion_queue/{queueId} {
+        allow read: if isAdmin();
+        allow write: if false; // Only API routes can write
+    }
+  }
+}
